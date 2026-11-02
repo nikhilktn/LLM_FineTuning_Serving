@@ -188,8 +188,11 @@ def extract_statements(path):
         user = (
             f"Extract these fields from the {TITLES[statement]} below for the most recent fiscal year: "
             f"{', '.join(target)}.\n"
-            "Report numbers exactly as shown in the table's units (negative for losses and outflows), "
-            "state the units in amounts_in, and use null for any field that is not in the table.\n\n"
+            "Report numbers in the table's units and state the units in amounts_in. Use null for any field "
+            "that is not shown in the table; do not calculate it from other lines.\n"
+            "Conventions: revenue, costs and income tax expense are positive (a tax benefit is negative); "
+            "net losses and cash outflows are negative. net_income is the amount attributable to the "
+            "company's shareholders, excluding non-controlling interests, or the only net income shown.\n\n"
             f"<statement>\n{head}\n{body}\n</statement>"
         )
         examples.append({
