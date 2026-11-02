@@ -228,6 +228,45 @@ completion, so the model learns to *answer*, not to repeat the question:
  "completion": [{"role": "assistant", "content": "Answer"}]}
 ```
 
+### This project's dataset: 10-K financial statement extraction
+
+The task is: **financial statement text in → fixed JSON of key figures out**. That's a skill
+(reading a table, finding the current-year column, keeping signs and units right, writing
+`null` instead of guessing), not memorised facts, so it suits LoRA well and its accuracy can be
+measured exactly.
+
+Labels come free from **inline XBRL**. Since about FY2019, every number in a 10-K's statements
+is tagged in the HTML with its concept, period, unit and scale. `build_10k_dataset.py`:
+
+1. finds the income statement, balance sheet and cash flow tables (the tables with the most
+   current-year, non-segment XBRL facts),
+2. renders each as plain text with its heading, which becomes the **prompt**,
+3. builds the **answer JSON** from the XBRL tags inside that same table,
+4. holds out about 10% of **companies** per sector for eval, so eval measures generalisation
+   to unseen companies rather than memorised ones.
+
+```bash
+source ~/venvs/train/bin/activate
+pip install lxml
+python scripts/build_10k_dataset.py --input-dir data/raw/10k --sectors data/raw/10k/sectors.csv --out-dir data
+```
+
+Data used: FY2020 and FY2024 10-Ks for each S&P 500 company (~980 filings, ~3,000 examples).
+The years are 4 apart because statements show 2–3 years of comparatives, and this way no
+number appears in both filings.
+
+**Look for:**
+- **Label coverage** printed at the end. `null` is often correct: banks have no "current
+  assets", and many companies don't report gross profit. The model has to learn not to invent
+  these.
+- Open a few rows of `data/eval.jsonl` and compare the prompt table with the answer JSON
+  yourself.
+
+**Transfer test (later):** 60 Nifty 500 FY2024-25 annual reports in `data/raw/annual_reports/`
+(PDF, ₹ crore, Ind AS) for checking whether the skill carries over to Indian filings.
+
+### Other data sources
+
 The script converts Alpaca-style (`instruction` / `input` / `output`) and chat-style
 (`messages`) data:
 
