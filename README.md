@@ -178,6 +178,26 @@ done
 If `cuda.is_available()` prints `False`, install the PyTorch wheel for your CUDA version from
 https://pytorch.org/get-started/locally/ in that environment first.
 
+**Smoke-test the GPU path training uses** (bf16 matmul, attention, bitsandbytes 4-bit forward
+and backward):
+
+```bash
+~/venvs/train/bin/python scripts/smoke_test_gpu.py     # must end with "ALL OK"
+```
+
+`is_available() == True` only proves the driver loaded. Real kernels can still fail if pip
+installed a torch built for a **newer CUDA minor version than your driver supports** (e.g.
+`+cu132` on a CUDA 13.0 driver). If the smoke test fails with `unsupported toolchain`,
+`no kernel image` or a bitsandbytes CUDA error, reinstall torch built for your driver's CUDA:
+
+```bash
+~/venvs/train/bin/pip install --force-reinstall "torch==2.14.1" --index-url https://download.pytorch.org/whl/cu130
+```
+
+The requirements files pin the versions this repo was tested with (transformers 5.22.1,
+TRL 1.17.1, PEFT 0.21.2, vLLM 0.33.0, llm-compressor 0.15.0). Major upgrades rename
+arguments, so upgrade on purpose, not by accident.
+
 ## Step 2: Download the base model
 
 **Learn:** what a model on the Hub actually is.

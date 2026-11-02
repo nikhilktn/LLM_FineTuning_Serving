@@ -22,7 +22,7 @@ if not prompts:
 
 dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 tokenizer = AutoTokenizer.from_pretrained(args.base)
-base = AutoModelForCausalLM.from_pretrained(args.base, torch_dtype=dtype, device_map={"": 0})
+base = AutoModelForCausalLM.from_pretrained(args.base, dtype=dtype, device_map={"": 0})
 model = PeftModel.from_pretrained(base, args.adapter)
 model.eval()
 
@@ -30,7 +30,8 @@ model.eval()
 def generate(prompt):
     msgs = [{"role": "system", "content": args.system_prompt}] if args.system_prompt else []
     msgs.append({"role": "user", "content": prompt})
-    ids = tokenizer.apply_chat_template(msgs, add_generation_prompt=True, return_tensors="pt").to(model.device)
+    text = tokenizer.apply_chat_template(msgs, add_generation_prompt=True, tokenize=False)
+    ids = tokenizer(text, return_tensors="pt", add_special_tokens=False)["input_ids"].to(model.device)
     with torch.no_grad():
         out = model.generate(ids, max_new_tokens=args.max_new_tokens, do_sample=False)
     return tokenizer.decode(out[0, ids.shape[1]:], skip_special_tokens=True)

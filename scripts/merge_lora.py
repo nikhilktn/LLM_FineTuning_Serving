@@ -15,7 +15,7 @@ parser.add_argument("--out", default="models/merged")
 args = parser.parse_args()
 
 base = AutoModelForCausalLM.from_pretrained(
-    args.base, torch_dtype=torch.bfloat16, device_map="cpu", low_cpu_mem_usage=True
+    args.base, dtype=torch.bfloat16, device_map="cpu", low_cpu_mem_usage=True
 )
 model = PeftModel.from_pretrained(base, args.adapter)
 model = model.merge_and_unload()

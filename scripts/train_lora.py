@@ -48,7 +48,7 @@ if args.qlora:
 model = AutoModelForCausalLM.from_pretrained(
     args.model,
     quantization_config=quant_config,
-    torch_dtype=compute_dtype,
+    dtype=compute_dtype,
     device_map={"": 0},
     attn_implementation="sdpa",
 )
@@ -78,7 +78,7 @@ sft_config = SFTConfig(
     gradient_accumulation_steps=args.grad_accum,
     learning_rate=args.lr,
     lr_scheduler_type="cosine",
-    warmup_ratio=0.03,
+    warmup_steps=0.03,  # < 1 means a ratio of total steps
     weight_decay=0.0,
     max_grad_norm=1.0,
     max_length=args.max_length,
@@ -96,7 +96,6 @@ sft_config = SFTConfig(
     eval_strategy="steps" if has_eval else "no",
     eval_steps=args.save_steps,
     report_to=args.report_to,
-    logging_dir=os.path.join(args.output_dir, "runs"),
     seed=42,
 )
 
