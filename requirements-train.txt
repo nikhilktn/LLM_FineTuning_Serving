@@ -1,10 +1,11 @@
-torch>=2.4
-transformers>=4.51
-peft>=0.15
-trl>=0.20
+# Versions verified together on 2026-11-02 (transformers 5 / TRL 1 APIs).
+torch>=2.14
+transformers==5.22.1
+peft==0.21.2
+trl==1.17.1
 accelerate>=1.5
 datasets>=3.0
-bitsandbytes>=0.45
+bitsandbytes==0.50.2
 huggingface_hub[hf_transfer]>=0.34
 safetensors
 sentencepiece

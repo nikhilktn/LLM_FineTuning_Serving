@@ -15,7 +15,7 @@ import json
 from datasets import Dataset
 from llmcompressor import oneshot
 from llmcompressor.modifiers.quantization import GPTQModifier, QuantizationModifier
-from llmcompressor.modifiers.smoothquant import SmoothQuantModifier
+from llmcompressor.modifiers.transform import SmoothQuantModifier
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 parser = argparse.ArgumentParser()
@@ -29,7 +29,7 @@ args = parser.parse_args()
 out_dir = args.out or f"{args.model.rstrip('/')}-{args.scheme}"
 
 tokenizer = AutoTokenizer.from_pretrained(args.model)
-model = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype="auto")
+model = AutoModelForCausalLM.from_pretrained(args.model, dtype="auto")
 
 # lm_head stays in 16-bit: it is sensitive to quantization and small relative to the model.
 if args.scheme == "fp8":
