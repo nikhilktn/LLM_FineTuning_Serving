@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Fine-tuning artifacts
+models/
+outputs/
+data/
+CLAUDE.md
