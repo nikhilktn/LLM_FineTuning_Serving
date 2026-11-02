@@ -72,7 +72,7 @@ def fact_value(el):
         value = float(re.sub(r"[^0-9.]", "", text) or 0)
     if el.get("sign") == "-":
         value = -value
-    return int(value) if value.is_integer() else value
+    return value if "." in text else int(value)  # keep "7,111.0" as 7111.0, like the table
 
 
 def parse_contexts(doc):
@@ -115,6 +115,8 @@ def heading(table, limit=300):
             node = node.getparent()
             continue
         node, steps = prev, steps + 1
+        if not isinstance(node.tag, str):  # comments and processing instructions
+            continue
         if node.tag == "table" or node.find(".//table") is not None:
             break
         t = norm(node.text_content())
@@ -124,6 +126,14 @@ def heading(table, limit=300):
 
 
 def process_filing(path):
+    """Never raises, so one unusual filing is counted as skipped instead of stopping the run."""
+    try:
+        return extract_statements(path)
+    except Exception as e:
+        return [], f"error: {type(e).__name__}: {e}"
+
+
+def extract_statements(path):
     try:
         doc = lhtml.parse(path).getroot()
     except Exception as e:
@@ -220,11 +230,13 @@ def main():
 
     splits = {"train": [], "eval": []}
     stats = collections.Counter()
+    errors = []
     found = collections.Counter()  # (statement, field) -> examples where the label is not null
     with ProcessPoolExecutor(args.workers) as pool:
         for path, (examples, error) in zip(files, pool.map(process_filing, files, chunksize=4)):
             if error:
                 stats[f"skipped filing: {error.split(':')[0]}"] += 1
+                errors.append(f"{path}: {error}")
                 continue
             ticker = os.path.basename(os.path.dirname(path))
             for ex in examples:
@@ -248,6 +260,8 @@ def main():
         print(f"{name}: {len(rows)} examples from {len({r['meta']['ticker'] for r in rows})} companies")
     for k, v in sorted(stats.items()):
         print(f"  {k}: {v}")
+    for e in errors[:10]:
+        print(f"  ! {e[:200]}")
     print("label coverage (share of examples where the field is found):")
     for statement, fields in STATEMENTS.items():
         n = stats[f"examples: {statement}"] or 1
