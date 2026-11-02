@@ -1,4 +1,4 @@
-"""Step 6 (optional): merge a LoRA adapter into the base weights -> standalone model.
+"""Step 9: merge a LoRA adapter into the base weights -> standalone model.
 
 Runs on CPU in bf16, so it needs ~2 bytes/param of system RAM (7B ~ 16 GB).
 """

@@ -1,0 +1,3 @@
+# llm-compressor pins compatible torch/transformers versions itself; keep it in its own env.
+llmcompressor
+datasets
