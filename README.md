@@ -363,7 +363,8 @@ python scripts/report.py
 * **Benchmark:** from concurrency 1 to 32, throughput (tok/s) should rise a lot while TPOT gets
   only slightly worse. That's continuous batching at work. At concurrency 1, decoding is
   memory-bound: TPOT ≈ weight bytes ÷ GPU memory bandwidth. Check this against your GPU's
-  bandwidth spec.
+  bandwidth spec. Each level uses fresh prompts: vLLM's **prefix caching** (on by default) makes
+  repeated prompts nearly free to prefill, which would fake a low TTFT.
 * **Extraction accuracy:** the metric that matters for this task. *Field accuracy* is the
   share of fields exactly right. *Exact match* is the share of statements with every field
   right. *Hallucination rate* is how often the model gives a number where the answer is `null`

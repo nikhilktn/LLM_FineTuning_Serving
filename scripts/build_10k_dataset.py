@@ -27,7 +27,8 @@ STATEMENTS = {
                     "us-gaap:RevenueFromContractWithCustomerIncludingAssessedTax", "us-gaap:SalesRevenueNet",
                     "us-gaap:RevenuesNetOfInterestExpense",  # banks: "Total net revenue"
                     "us-gaap:RegulatedAndUnregulatedOperatingRevenue"],  # utilities
-        "cost_of_revenue": ["us-gaap:CostOfRevenue", "us-gaap:CostOfGoodsAndServicesSold"],
+        "cost_of_revenue": ["us-gaap:CostOfRevenue", "us-gaap:CostOfGoodsAndServicesSold",
+                            "us-gaap:CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization"],
         "gross_profit": ["us-gaap:GrossProfit"],
         "operating_income": ["us-gaap:OperatingIncomeLoss"],
         "income_tax": ["us-gaap:IncomeTaxExpenseBenefit"],
@@ -60,7 +61,16 @@ SYSTEM_PROMPT = "You extract data from financial statements. Reply with a single
 
 
 def norm(text):
-    return re.sub(r"\s+", " ", text.replace("\xa0", " ")).strip()
+    text = re.sub("[\u200b\u200c\u200d\ufeff]", "", text.replace("\xa0", " "))  # zero-width characters
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def date_shown(iso, text):
+    """True if the date is visible in the prompt, e.g. 'December 31, 2024' or 'Year Ended Dec. 31,' + '2024'."""
+    d = date.fromisoformat(iso)
+    month = f"(?:{d.strftime('%B')}|{d.strftime('%b')}\\.?)"
+    return (re.search(rf"{month}\s*0?{d.day}\b", text) is not None and str(d.year) in text) \
+        or f"{d.month}/{d.day}/{d.year}" in text
 
 
 def fact_value(el):
@@ -84,6 +94,17 @@ def parse_contexts(doc):
             "dimensional": ctx.find(".//xbrli:segment") is not None,
         }
     return contexts
+
+
+def usd_unit_ids(doc):
+    """Ids of units that are plain US dollars (not per-share), resolved from <xbrli:unit> definitions,
+    since filers name them anything from "usd" to "U_iso4217USD" to "Unit12"."""
+    ids = set()
+    for unit in doc.iter("xbrli:unit"):
+        measures = [m.text.strip().lower() for m in unit.iter("xbrli:measure") if m.text]
+        if measures == ["iso4217:usd"] and unit.find(".//xbrli:divide") is None:
+            ids.add(unit.get("id"))
+    return ids
 
 
 def table_text(table):
@@ -139,6 +160,7 @@ def extract_statements(path):
     except Exception as e:
         return [], f"parse error: {e}"
     contexts = parse_contexts(doc)
+    usd_units = usd_unit_ids(doc)
     doc_type = next((el for el in doc.iter("ix:nonnumeric") if el.get("name") == "dei:DocumentType"), None)
     if doc_type is None or doc_type.get("contextref") not in contexts:
         return [], "no inline XBRL / DocumentType"
@@ -171,8 +193,7 @@ def extract_statements(path):
         _, table, current = best
 
         target = {"fiscal_period_end": period_end}
-        scales = collections.Counter(el.get("scale", "0") for el in current
-                                     if (el.get("unitref") or "").lower() == "usd")
+        scales = collections.Counter(el.get("scale", "0") for el in current if el.get("unitref") in usd_units)
         scale = int(scales.most_common(1)[0][0]) if scales else 0
         target["amounts_in"] = SCALE_WORDS.get(scale, f"10^{scale}")
         for field, concepts in fields.items():
@@ -185,15 +206,21 @@ def extract_statements(path):
 
         body = table_text(table)
         head = heading(table)
+        # Only label what the prompt shows; otherwise the model could only guess.
+        if not date_shown(period_end, head + body):
+            target["fiscal_period_end"] = None  # e.g. a header that only says "2020 | 2019"
+        if target["amounts_in"].rstrip("s") not in (head + body).lower():
+            target["amounts_in"] = None  # the "(In millions)" line is outside the captured text
         user = (
             f"Extract these fields from the {TITLES[statement]} below for the most recent fiscal year: "
             f"{', '.join(target)}.\n"
-            "Give fiscal_period_end as YYYY-MM-DD. "
-            "Report numbers in the table's units and state the units in amounts_in. Use null for any field "
+            "Give fiscal_period_end as YYYY-MM-DD and amounts_in as one of units, thousands, millions or "
+            "billions. Report numbers in the table's units. Use null for any field "
             "that is not shown in the table; do not calculate it from other lines.\n"
             "Conventions: revenue, costs and income tax expense are positive (a tax benefit is negative); "
             "net losses and cash outflows are negative. net_income is the amount attributable to the "
-            "company's shareholders, excluding non-controlling interests, or the only net income shown.\n\n"
+            "company's shareholders, excluding non-controlling interests, or the only net income shown; "
+            "total_equity likewise excludes non-controlling interests.\n\n"
             f"<statement>\n{head}\n{body}\n</statement>"
         )
         examples.append({
