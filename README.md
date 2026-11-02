@@ -251,7 +251,10 @@ pip install lxml
 python scripts/build_10k_dataset.py --input-dir data/raw/10k --sectors data/raw/10k/sectors.csv --out-dir data
 ```
 
-Data used: FY2020 and FY2024 10-Ks for each S&P 500 company (~980 filings, ~3,000 examples).
+Data used: the main 10-K document (not exhibits or 10-K/A amendments) for FY2020 and FY2024 of each
+S&P 500 company, falling back to a neighbouring year when a filing has no inline XBRL: 983 filings,
+2,865 examples (2,578 train from 441 companies, 287 eval from 49 held-out companies). 99.97% of
+label values appear verbatim in their prompt.
 The years are 4 apart because statements show 2–3 years of comparatives, and this way no
 number appears in both filings.
 
