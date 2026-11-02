@@ -188,6 +188,7 @@ def extract_statements(path):
         user = (
             f"Extract these fields from the {TITLES[statement]} below for the most recent fiscal year: "
             f"{', '.join(target)}.\n"
+            "Give fiscal_period_end as YYYY-MM-DD. "
             "Report numbers in the table's units and state the units in amounts_in. Use null for any field "
             "that is not shown in the table; do not calculate it from other lines.\n"
             "Conventions: revenue, costs and income tax expense are positive (a tax benefit is negative); "
