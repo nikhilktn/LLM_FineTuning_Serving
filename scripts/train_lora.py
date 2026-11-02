@@ -27,6 +27,9 @@ parser.add_argument("--lora-dropout", type=float, default=0.05)
 parser.add_argument("--save-steps", type=int, default=200)
 parser.add_argument("--resume", default=None, help="checkpoint dir to resume from")
 parser.add_argument("--report-to", default="tensorboard", help="tensorboard, wandb or none")
+parser.add_argument("--logging-steps", type=int, default=1, help="1 shows the warmup ramp in TensorBoard")
+parser.add_argument("--no-gradient-checkpointing", action="store_true",
+                    help="faster (no activation recompute) but needs much more GPU memory")
 args = parser.parse_args()
 
 bf16 = torch.cuda.is_bf16_supported()  # Ampere (RTX 30xx / A100) and newer
@@ -84,12 +87,12 @@ sft_config = SFTConfig(
     max_length=args.max_length,
     packing=False,
     completion_only_loss=True,  # loss on the assistant answer only
-    gradient_checkpointing=True,
+    gradient_checkpointing=not args.no_gradient_checkpointing,
     gradient_checkpointing_kwargs={"use_reentrant": False},
     optim="paged_adamw_8bit" if args.qlora else "adamw_torch_fused",
     bf16=bf16,
     fp16=not bf16,
-    logging_steps=10,
+    logging_steps=args.logging_steps,
     save_strategy="steps",
     save_steps=args.save_steps,
     save_total_limit=3,
@@ -117,6 +120,7 @@ summary = {
     "peak_gpu_mem_gb": round(torch.cuda.max_memory_allocated() / 1e9, 2),
     "qlora": args.qlora,
     "lora_r": args.lora_r,
+    "gradient_checkpointing": not args.no_gradient_checkpointing,
     "trainable_params": sum(p.numel() for p in trainer.model.parameters() if p.requires_grad),
 }
 
