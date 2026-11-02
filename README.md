@@ -348,7 +348,8 @@ curl -s localhost:8000/metrics | grep -E "^vllm:(num_requests|gpu_cache_usage)" 
 With the server from Step 4 still running:
 
 ```bash
-python scripts/benchmark.py --model base --label base
+python scripts/eval_extraction.py --model base --label base   # task accuracy, all eval examples
+python scripts/benchmark.py --model base --label base         # speed
 ```
 
 Then stop the server (`tmux attach -t vllm`, Ctrl-C), because offline evaluation needs the GPU:
@@ -363,6 +364,12 @@ python scripts/report.py
   only slightly worse. That's continuous batching at work. At concurrency 1, decoding is
   memory-bound: TPOT ≈ weight bytes ÷ GPU memory bandwidth. Check this against your GPU's
   bandwidth spec.
+* **Extraction accuracy:** the metric that matters for this task. *Field accuracy* is the
+  share of fields exactly right. *Exact match* is the share of statements with every field
+  right. *Hallucination rate* is how often the model gives a number where the answer is `null`
+  (e.g. a calculated gross profit). Also check `outcomes` for **sign errors**, and the average
+  output tokens (verbose answers are slower). Every prediction is in
+  `results/extract_base.json`, so read some of the wrong ones.
 * **Perplexity:** how "surprised" the base model is by your reference answers. Fine-tuning
   should lower it.
 * **Samples** in `results/eval_base.json`: read them. This is your "before" picture.
