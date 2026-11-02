@@ -1,4 +1,4 @@
-"""Step 5: compare base vs. fine-tuned answers for a prompt (or a file of prompts)."""
+"""Step 7: compare base vs. fine-tuned answers for a prompt (or a file of prompts)."""
 import argparse
 
 import torch

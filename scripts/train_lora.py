@@ -1,6 +1,8 @@
-"""Step 4: LoRA / QLoRA supervised fine-tuning with TRL + PEFT on a single GPU."""
+"""Step 6: LoRA / QLoRA supervised fine-tuning with TRL + PEFT on a single GPU."""
 import argparse
+import json
 import os
+import time
 
 import torch
 from datasets import load_dataset
@@ -24,6 +26,7 @@ parser.add_argument("--lora-alpha", type=int, default=32)
 parser.add_argument("--lora-dropout", type=float, default=0.05)
 parser.add_argument("--save-steps", type=int, default=200)
 parser.add_argument("--resume", default=None, help="checkpoint dir to resume from")
+parser.add_argument("--report-to", default="tensorboard", help="tensorboard, wandb or none")
 args = parser.parse_args()
 
 bf16 = torch.cuda.is_bf16_supported()  # Ampere (RTX 30xx / A100) and newer
@@ -92,7 +95,8 @@ sft_config = SFTConfig(
     save_total_limit=3,
     eval_strategy="steps" if has_eval else "no",
     eval_steps=args.save_steps,
-    report_to="none",  # set to "tensorboard" or "wandb" if you use them
+    report_to=args.report_to,
+    logging_dir=os.path.join(args.output_dir, "runs"),
     seed=42,
 )
 
@@ -106,11 +110,23 @@ trainer = SFTTrainer(
 )
 trainer.model.print_trainable_parameters()
 
+torch.cuda.reset_peak_memory_stats()
+start = time.time()
 trainer.train(resume_from_checkpoint=args.resume)
+summary = {
+    "train_minutes": round((time.time() - start) / 60, 1),
+    "peak_gpu_mem_gb": round(torch.cuda.max_memory_allocated() / 1e9, 2),
+    "qlora": args.qlora,
+    "lora_r": args.lora_r,
+    "trainable_params": sum(p.numel() for p in trainer.model.parameters() if p.requires_grad),
+}
 
 final_dir = os.path.join(args.output_dir, "final")
 trainer.save_model(final_dir)  # saves only the adapter
 tokenizer.save_pretrained(final_dir)
 if has_eval:
-    print("Final eval:", trainer.evaluate())
+    summary["eval_loss"] = round(trainer.evaluate()["eval_loss"], 4)
+with open(os.path.join(args.output_dir, "train_summary.json"), "w") as f:
+    json.dump(summary, f, indent=2)
+print("Training summary:", summary)
 print(f"Adapter saved to {final_dir}")

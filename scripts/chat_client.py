@@ -1,4 +1,4 @@
-"""Step 8: call the vLLM server with the OpenAI Python client (pip install openai)."""
+"""Step 4: call the vLLM server with the OpenAI Python client (pip install openai)."""
 import argparse
 import os
 

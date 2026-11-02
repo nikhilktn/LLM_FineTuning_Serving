@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# Step 7: serve with vLLM's OpenAI-compatible server.
-#   MODE=lora   -> base model + LoRA adapter loaded at runtime (default)
-#   MODE=merged -> merged standalone model from step 6
+# Steps 4, 8, 11, 12: serve with vLLM's OpenAI-compatible server.
+#   MODE=model -> serve any full model dir: base, merged or quantized (default)
+#   MODE=lora  -> serve BASE_MODEL plus a LoRA adapter loaded at runtime
+# Extra arguments are passed straight to `vllm serve`, e.g. --max-num-seqs 64
 # Run inside the serving venv: source ~/venvs/serve/bin/activate
 set -euo pipefail
 
-MODE="${MODE:-lora}"
+MODE="${MODE:-model}"
+MODEL_PATH="${MODEL_PATH:-models/base}"
+SERVED_NAME="${SERVED_NAME:-my-model}"
 BASE_MODEL="${BASE_MODEL:-models/base}"
 ADAPTER_PATH="${ADAPTER_PATH:-outputs/qwen7b-lora/final}"
 ADAPTER_NAME="${ADAPTER_NAME:-my-lora}"
-MERGED_MODEL="${MERGED_MODEL:-models/merged-qwen7b}"
-SERVED_NAME="${SERVED_NAME:-my-model}"
 HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-8000}"
 GPU_UTIL="${GPU_UTIL:-0.90}"
@@ -22,18 +23,18 @@ COMMON=(--host "$HOST" --port "$PORT"
         --gpu-memory-utilization "$GPU_UTIL"
         --max-model-len "$MAX_MODEL_LEN"
         --api-key "$VLLM_API_KEY"
-        --dtype auto)
+        --served-model-name "$SERVED_NAME")
 
 if [[ "$MODE" == "lora" ]]; then
   # Base model is reachable as "$SERVED_NAME", the adapter as "$ADAPTER_NAME".
   exec vllm serve "$BASE_MODEL" "${COMMON[@]}" \
-    --served-model-name "$SERVED_NAME" \
     --enable-lora \
     --lora-modules "$ADAPTER_NAME=$ADAPTER_PATH" \
     --max-lora-rank "$MAX_LORA_RANK" \
-    --max-loras 2
-elif [[ "$MODE" == "merged" ]]; then
-  exec vllm serve "$MERGED_MODEL" "${COMMON[@]}" --served-model-name "$SERVED_NAME"
+    --max-loras 2 "$@"
+elif [[ "$MODE" == "model" ]]; then
+  # Quantized models (FP8 / INT8 / INT4) are detected from their config automatically.
+  exec vllm serve "$MODEL_PATH" "${COMMON[@]}" "$@"
 else
-  echo "MODE must be 'lora' or 'merged'" >&2; exit 1
+  echo "MODE must be 'model' or 'lora'" >&2; exit 1
 fi
