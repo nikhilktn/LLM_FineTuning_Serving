@@ -407,7 +407,8 @@ tensorboard --logdir outputs/qwen7b-lora/runs --port 6006 --bind_all   # loss cu
 * `trainable params: ~40M || all params: ~7.6B || trainable%: ~0.5`: printed at start. That's LoRA.
 * Effective batch = `batch-size × grad-accum` = 16. `grad-accum` trades time for memory.
 * `--lr 2e-4` is high compared with full fine-tuning (~1e-5). LoRA tolerates and needs it.
-* Gradient checkpointing recomputes activations in the backward pass instead of storing them, saving memory at about 30% extra time.
+* Gradient checkpointing recomputes activations in the backward pass instead of storing them, saving memory at about 30% extra time. Turn it off with `--no-gradient-checkpointing` if memory allows.
+* **On this server** (RTX 4000 SFF Ada, 70 W): about 35 s/step, so roughly 3 hours for 2 epochs. Training is compute-bound, so the card hits its 70 W power cap and clocks down to about 1.2 of 3.1 GHz (`nvidia-smi` throttle reason `0x4`, SW power cap). Serving decode is memory-bound and doesn't suffer as much.
 
 **Reading the curves:**
 * `train/loss` drops fast at first, then flattens. A sudden jump to `nan` means the learning rate is too high or there's an fp16 overflow.
@@ -573,6 +574,8 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
 
 1. **LoRA vs QLoRA** (needs ≥ 40 GB for 7B bf16 LoRA): train without `--qlora` and compare
    `train_summary.json` (peak memory, time) and perplexity.
+1b. **Gradient checkpointing:** rerun with `--no-gradient-checkpointing` and compare s/step and peak
+   memory in `train_summary.json`. On a power-capped GPU, skipping the recompute saves real time.
 2. **LoRA rank:** train `--lora-r 8`, `16` and `64` (with `--lora-alpha` = 2×r). Where does
    perplexity stop improving? Remember vLLM needs `MAX_LORA_RANK` ≥ r.
 3. **Data size:** train on 500, 2,000 and the full set. How much data does your task need?
