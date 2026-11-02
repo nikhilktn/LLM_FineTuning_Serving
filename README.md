@@ -109,6 +109,13 @@ bash scripts/check_env.sh
 * **"CUDA Version" in `nvidia-smi`**: 12.x. Newer drivers are better for recent vLLM.
 * **Free disk**: at least 150 GB. You'll keep base, merged and three quantized copies.
 
+**Common problems:**
+* `Failed to initialize NVML: Driver/library version mismatch`: the driver was upgraded, but
+  the old kernel module is still loaded. Reboot. If it persists, check `dkms status`. Afterwards,
+  pin the driver so an automatic upgrade can't break a training run:
+  `sudo apt-mark hold $(dpkg -l | awk '/^ii/ && $2 ~ /nvidia/ {print $2}')`
+* Python below 3.10: use `/usr/bin/python3` (3.12 on Ubuntu 24.04) for the environments in Step 1.
+
 **About your 64 GB RAM + 32 GB swap:** that's system memory. It matters when loading
 checkpoints and merging. Swap never helps the GPU, and a job that starts swapping slows to a
 crawl.
@@ -133,8 +140,10 @@ breakage, so use three:
 ```bash
 sudo apt-get update && sudo apt-get install -y python3-venv python3-dev git tmux
 
+# Use the system Python (3.12 on Ubuntu 24.04), not an older python3 earlier on your PATH.
+PY=/usr/bin/python3; $PY --version
 for env in train quant serve; do
-  python3 -m venv ~/venvs/$env
+  $PY -m venv ~/venvs/$env
   ~/venvs/$env/bin/pip install --upgrade pip
   ~/venvs/$env/bin/pip install -r requirements-$env.txt
 done
