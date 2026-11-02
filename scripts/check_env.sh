@@ -3,10 +3,19 @@
 set -u
 
 echo "=== GPU / driver ==="
+echo "GPU(s) on PCI bus: $(lspci 2>/dev/null | grep -i 'nvidia' | grep -iE 'vga|3d' | cut -d: -f3- | paste -sd ';')"
+echo "Running kernel:    $(uname -r)"
 if [[ -r /proc/driver/nvidia/version ]]; then
-  echo "Kernel module: $(grep -o 'Kernel Module.*' /proc/driver/nvidia/version | head -n 1)"
+  loaded=$(grep -oE 'Kernel Module[^0-9]*[0-9.]+' /proc/driver/nvidia/version | grep -oE '[0-9]+\.[0-9.]+' | head -n 1)
+  echo "Loaded module:     ${loaded}"
 else
-  echo "Kernel module: not loaded (driver missing or not built for kernel $(uname -r))"
+  loaded=""
+  echo "Loaded module:     none (driver missing or not built for this kernel)"
+fi
+on_disk=$(modinfo -F version nvidia 2>/dev/null)
+echo "On-disk module:    ${on_disk:-not found} ($(modinfo -F filename nvidia 2>/dev/null))"
+if [[ -n "$loaded" && -n "$on_disk" && "$loaded" != "$on_disk" ]]; then
+  echo "!! Loaded module differs from the installed one: reboot, or reload the module."
 fi
 if command -v nvidia-smi >/dev/null; then
   if nvidia-smi; then
