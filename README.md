@@ -131,6 +131,28 @@ crawl.
 
 If you change the model, change every `models/...` / `--model` path below to match.
 
+### This server: RTX 4000 SFF Ada, 20 GB, compute capability 8.9, ~280 GB/s, 70 W
+
+**Plan:** Qwen2.5-7B-Instruct, trained with QLoRA. bf16 LoRA on 7B doesn't fit in 20 GB, so
+experiment 1 (LoRA vs QLoRA) has to use `Qwen/Qwen2.5-3B-Instruct`. Ada has FP8 tensor cores,
+so all three quantization schemes run on fast kernels.
+
+**Predict before you measure.** These are back-of-envelope numbers. Write them down, then
+compare them with the vLLM startup log (Step 4) and `benchmark.py` (Steps 5 and 11).
+
+KV cache per token for Qwen2.5-7B is 2 (K and V) × 28 layers × 4 KV heads × 128 dims ×
+2 bytes ≈ **56 KB**. Memory available at `GPU_UTIL=0.90` is about 19.3 GB, minus about 1.5 GB of
+activation and CUDA-graph overhead.
+
+| Model | Weights | Left for KV cache | ≈ KV cache tokens | Decode ceiling at concurrency 1 (bandwidth ÷ weight bytes) |
+|---|---|---|---|---|
+| bf16 | ~15.2 GB | ~2.6 GB | ~45k | ~18 tok/s (~55 ms/token) |
+| FP8 / W8A8 | ~8.7 GB (embeddings + `lm_head` stay bf16) | ~9 GB | ~160k | ~32 tok/s |
+| W4A16 | ~5.5 GB | ~12 GB | ~215k | ~50 tok/s |
+
+Real decode speed usually reaches 70–85% of the ceiling. If your measurements are far off,
+find out why: that's where the learning is.
+
 ## Step 1: Set up Python environments
 
 **Learn:** vLLM, the training stack and llm-compressor each pin their own PyTorch and

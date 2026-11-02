@@ -6,7 +6,7 @@ echo "=== GPU / driver ==="
 echo "GPU(s) on PCI bus: $(lspci 2>/dev/null | grep -i 'nvidia' | grep -iE 'vga|3d' | cut -d: -f3- | paste -sd ';')"
 echo "Running kernel:    $(uname -r)"
 if [[ -r /proc/driver/nvidia/version ]]; then
-  loaded=$(grep -oE 'Kernel Module[^0-9]*[0-9.]+' /proc/driver/nvidia/version | grep -oE '[0-9]+\.[0-9.]+' | head -n 1)
+  loaded=$(grep -m1 NVRM /proc/driver/nvidia/version | grep -oE '\b[0-9]{3,}\.[0-9]+(\.[0-9]+)?\b' | head -n 1)
   echo "Loaded module:     ${loaded}"
 else
   loaded=""
