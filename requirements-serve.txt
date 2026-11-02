@@ -1,0 +1,3 @@
+# vLLM pins a compatible torch itself; don't install torch separately in this env.
+vllm
+openai
