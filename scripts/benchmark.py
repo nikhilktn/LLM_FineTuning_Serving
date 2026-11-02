@@ -55,12 +55,13 @@ async def one_request(messages):
     return ttft, e2e, out_tokens
 
 
-async def run_level(concurrency):
+async def run_level(concurrency, offset):
     sem = asyncio.Semaphore(concurrency)
 
     async def task(i):
         async with sem:
-            return await one_request(prompts[i % len(prompts)])
+            # Fresh prompts per level: reused ones would hit vLLM's prefix cache and fake a low TTFT.
+            return await one_request(prompts[(offset + i) % len(prompts)])
 
     t0 = time.perf_counter()
     results = await asyncio.gather(*(task(i) for i in range(args.requests_per_level)))
@@ -79,11 +80,11 @@ async def run_level(concurrency):
 
 
 async def main():
-    await one_request(prompts[0])  # warm-up
+    await one_request(prompts[-1])  # warm-up
     levels = []
     print(f"{'conc':>5} {'TTFT p50':>10} {'TTFT p95':>10} {'TPOT p50':>10} {'tok/s':>8} {'req/s':>7}")
     for c in [int(x) for x in args.concurrency.split(",")]:
-        r = await run_level(c)
+        r = await run_level(c, offset=len(levels) * args.requests_per_level)
         levels.append(r)
         print(f"{c:>5} {r['ttft_p50_ms']:>8}ms {r['ttft_p95_ms']:>8}ms {r['tpot_p50_ms']:>8}ms "
               f"{r['output_tok_per_s']:>8} {r['requests_per_s']:>7}")
