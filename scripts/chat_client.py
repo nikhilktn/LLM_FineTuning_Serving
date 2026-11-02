@@ -11,7 +11,7 @@ parser.add_argument("--prompt", default="Explain what LoRA fine-tuning is in two
 parser.add_argument("--stream", action="store_true")
 args = parser.parse_args()
 
-client = OpenAI(base_url=args.base_url, api_key=os.environ.get("VLLM_API_KEY", "EMPTY"))
+client = OpenAI(base_url=args.base_url, api_key=os.environ.get("VLLM_API_KEY") or open(os.path.expanduser("~/.vllm_api_key")).read().strip())
 
 print("Available models:", [m.id for m in client.models.list().data])
 

@@ -12,17 +12,20 @@ SERVED_NAME="${SERVED_NAME:-my-model}"
 BASE_MODEL="${BASE_MODEL:-models/base}"
 ADAPTER_PATH="${ADAPTER_PATH:-outputs/qwen7b-lora/final}"
 ADAPTER_NAME="${ADAPTER_NAME:-my-lora}"
-HOST="${HOST:-0.0.0.0}"
+# Localhost only by default; reach it from a laptop with: ssh -L 8000:localhost:8000 <server>
+HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
 GPU_UTIL="${GPU_UTIL:-0.90}"
 MAX_MODEL_LEN="${MAX_MODEL_LEN:-8192}"
 MAX_LORA_RANK="${MAX_LORA_RANK:-16}"
-VLLM_API_KEY="${VLLM_API_KEY:?Set VLLM_API_KEY, e.g. export VLLM_API_KEY=\$(openssl rand -hex 24)}"
+# vLLM reads the key from the environment, which keeps it out of `ps` (unlike --api-key).
+: "${VLLM_API_KEY:=$(cat ~/.vllm_api_key 2>/dev/null)}"
+: "${VLLM_API_KEY:?Create a key first: openssl rand -hex 24 > ~/.vllm_api_key && chmod 600 ~/.vllm_api_key}"
+export VLLM_API_KEY
 
 COMMON=(--host "$HOST" --port "$PORT"
         --gpu-memory-utilization "$GPU_UTIL"
         --max-model-len "$MAX_MODEL_LEN"
-        --api-key "$VLLM_API_KEY"
         --served-model-name "$SERVED_NAME")
 
 if [[ "$MODE" == "lora" ]]; then
