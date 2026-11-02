@@ -305,10 +305,21 @@ print(t.apply_chat_template(r['prompt'] + r['completion'], tokenize=False))"
 ```bash
 tmux new -s vllm
 source ~/venvs/serve/bin/activate
-export VLLM_API_KEY=$(openssl rand -hex 24); echo $VLLM_API_KEY   # save this
+[ -f ~/.vllm_api_key ] || (openssl rand -hex 24 > ~/.vllm_api_key && chmod 600 ~/.vllm_api_key)   # a random key you create
 MODE=model MODEL_PATH=models/base SERVED_NAME=base bash scripts/serve_vllm.sh
 # detach: Ctrl-b d
 ```
+
+**About the API key:** it isn't issued by vLLM or Hugging Face. It's a random password you
+create, and vLLM rejects any request whose `Authorization: Bearer <key>` header doesn't match.
+The script reads it from `~/.vllm_api_key`, and so do the Python clients.
+
+**tmux basics:** `tmux ls` lists sessions. `tmux attach -t vllm` reattaches. Inside tmux,
+Ctrl-b d detaches, a green status bar shows at the bottom, and `echo $TMUX` is non-empty.
+A server started *outside* tmux stops when your SSH session closes.
+
+**From your laptop:** the server listens on `127.0.0.1` only. Tunnel to it with
+`ssh -N -L 8000:localhost:8000 admin@<server>`, then use `http://localhost:8000` locally.
 
 **Read the startup log.** It explains vLLM's memory use:
 * `Model loading took X GiB`: the weights (about 15 GiB for 7B bf16).
@@ -319,7 +330,7 @@ MODE=model MODEL_PATH=models/base SERVED_NAME=base bash scripts/serve_vllm.sh
 Call it from a second shell:
 
 ```bash
-source ~/venvs/serve/bin/activate && export VLLM_API_KEY=...
+source ~/venvs/serve/bin/activate && export VLLM_API_KEY=$(cat ~/.vllm_api_key)
 curl -s localhost:8000/v1/models -H "Authorization: Bearer $VLLM_API_KEY" | python -m json.tool
 curl -s localhost:8000/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer $VLLM_API_KEY" \
   -d '{"model": "base", "messages": [{"role": "user", "content": "What is a KV cache?"}], "max_tokens": 200}' | python -m json.tool
@@ -541,7 +552,8 @@ sudo systemctl daemon-reload && sudo systemctl enable --now vllm
 sudo journalctl -u vllm -f
 ```
 
-**Security:** always use `--api-key`, never expose port 8000 directly to the internet, and put
+**Security:** always require an API key (passed via the `VLLM_API_KEY` environment variable so it
+stays out of `ps`), never expose port 8000 directly to the internet, and put
 it behind nginx or Caddy with TLS, or restrict access with the firewall:
 `sudo ufw allow from <your-ip> to any port 8000`.
 

@@ -25,7 +25,7 @@ parser.add_argument("--eval-file", default="data/eval.jsonl", help="prompts are 
 parser.add_argument("--out-dir", default="results")
 args = parser.parse_args()
 
-client = AsyncOpenAI(base_url=args.base_url, api_key=os.environ.get("VLLM_API_KEY", "EMPTY"))
+client = AsyncOpenAI(base_url=args.base_url, api_key=os.environ.get("VLLM_API_KEY") or open(os.path.expanduser("~/.vllm_api_key")).read().strip())
 prompts = [json.loads(l)["prompt"] for l in open(args.eval_file)]
 
 

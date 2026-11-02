@@ -14,7 +14,8 @@ Environment=HF_HOME=/home/ubuntu/.cache/huggingface
 Environment=MODE=model
 Environment=MODEL_PATH=models/merged-qwen7b-w4a16
 Environment=SERVED_NAME=my-model
-Environment=VLLM_API_KEY=CHANGE_ME
+# The API key is read from ~/.vllm_api_key of the User above (chmod 600).
+# serve_vllm.sh listens on 127.0.0.1; set HOST=0.0.0.0 only behind a firewall or reverse proxy.
 ExecStart=/bin/bash scripts/serve_vllm.sh
 Restart=on-failure
 RestartSec=10
