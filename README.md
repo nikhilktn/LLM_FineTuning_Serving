@@ -582,6 +582,14 @@ python scripts/report.py
 Step 6's eval loss was lower in mid-training than at the end. Does the step-250 checkpoint
 extract as well as the final one? Loss and field accuracy don't always agree.
 
+**Our result.** Step 250: 97.7% field accuracy and 87.5% exact match, against the final adapter's
+97.9% and 88.5%. The two gave identical answers on 283 of 287 tables, and the final one fully
+fixed 3 more tables. That 3–0 is within noise (a 1-point exact-match gap is about half the
+±1.9-point standard error at n=287). By step 250 the cosine schedule had cut the learning rate to
+3e-5, so the last 72 steps made only small adjustments. To test whether the second epoch was
+needed, compare at the epoch boundary (step 161): keep that checkpoint with `--save-steps`, or
+train with `--epochs 1`.
+
 ### 8.6 (Optional) Load an adapter at runtime
 
 Restart the server with `VLLM_ALLOW_RUNTIME_LORA_UPDATING=True` in front of the command, then:
