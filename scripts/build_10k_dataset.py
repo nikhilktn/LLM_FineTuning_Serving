@@ -32,21 +32,27 @@ STATEMENTS = {
         "gross_profit": ["us-gaap:GrossProfit"],
         "operating_income": ["us-gaap:OperatingIncomeLoss"],
         "income_tax": ["us-gaap:IncomeTaxExpenseBenefit"],
-        "net_income": ["us-gaap:NetIncomeLoss"],
+        "net_income": ["us-gaap:NetIncomeLoss", "us-gaap:NetIncomeLossAvailableToCommonStockholdersBasic",
+                       "us-gaap:ProfitLoss"],
         "eps_basic": ["us-gaap:EarningsPerShareBasic"],
         "eps_diluted": ["us-gaap:EarningsPerShareDiluted"],
     },
     "balance_sheet": {
-        "cash_and_equivalents": ["us-gaap:CashAndCashEquivalentsAtCarryingValue"],
+        "cash_and_equivalents": ["us-gaap:CashAndCashEquivalentsAtCarryingValue",
+                                 "us-gaap:CashAndCashEquivalentsAtCarryingValueIncludingDiscontinuedOperations",
+                                 "us-gaap:CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+                                 "us-gaap:Cash"],  # insurers: a line just called "Cash"
         "total_current_assets": ["us-gaap:AssetsCurrent"],
         "total_assets": ["us-gaap:Assets"],
         "total_current_liabilities": ["us-gaap:LiabilitiesCurrent"],
         "total_liabilities": ["us-gaap:Liabilities"],
-        "total_equity": ["us-gaap:StockholdersEquity"],
+        "total_equity": ["us-gaap:StockholdersEquity",
+                         "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"],
         "total_liabilities_and_equity": ["us-gaap:LiabilitiesAndStockholdersEquity"],
     },
     "cash_flow": {
-        "net_income": ["us-gaap:NetIncomeLoss", "us-gaap:ProfitLoss"],
+        "net_income": ["us-gaap:NetIncomeLoss", "us-gaap:ProfitLoss",
+                       "us-gaap:IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest"],
         "operating_cash_flow": ["us-gaap:NetCashProvidedByUsedInOperatingActivities",
                                 "us-gaap:NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"],
         "investing_cash_flow": ["us-gaap:NetCashProvidedByUsedInInvestingActivities",
@@ -55,6 +61,11 @@ STATEMENTS = {
                                 "us-gaap:NetCashProvidedByUsedInFinancingActivitiesContinuingOperations"],
     },
 }
+# These totals include non-controlling interests, so on the income statement and balance sheet they
+# only match the prompt's convention when the table has no NCI line (then they are "the only one shown").
+# The cash flow statement starts from consolidated net income, so there they always apply.
+INCLUDES_NCI = {"us-gaap:ProfitLoss", "us-gaap:StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"}
+NCI_CONCEPTS = {"us-gaap:MinorityInterest", "us-gaap:NetIncomeLossAttributableToNoncontrollingInterest"}
 TITLES = {"income_statement": "income statement", "balance_sheet": "balance sheet", "cash_flow": "cash flow statement"}
 SCALE_WORDS = {0: "units", 3: "thousands", 6: "millions", 9: "billions"}
 SYSTEM_PROMPT = "You extract data from financial statements. Reply with a single JSON object and nothing else."
@@ -196,9 +207,14 @@ def extract_statements(path):
         scales = collections.Counter(el.get("scale", "0") for el in current if el.get("unitref") in usd_units)
         scale = int(scales.most_common(1)[0][0]) if scales else 0
         target["amounts_in"] = SCALE_WORDS.get(scale, f"10^{scale}")
+        nci_shown = statement != "cash_flow" and any(
+            el.get("name") in NCI_CONCEPTS and is_current(el.get("contextref"), statement)
+            for el in table.iter("ix:nonfraction"))
         for field, concepts in fields.items():
             target[field] = None
             for concept in concepts:
+                if nci_shown and concept in INCLUDES_NCI:
+                    continue
                 el = next((e for e in current if e.get("name") == concept), None)
                 if el is not None:
                     target[field] = fact_value(el)
