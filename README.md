@@ -546,6 +546,13 @@ python scripts/report.py
 * `base` (Step 5) vs `base-on-lora-server`: the cost of just enabling LoRA (less KV cache).
 * `base-on-lora-server` vs `lora-r16`: the per-request cost of applying the adapter.
 
+**Our result.** Enabling LoRA cut the KV cache from 40,880 to 30,832 tokens (−0.55 GB). That
+costs nothing until the cache gets tight: at 32 users `base` fell from 223.6 to 194.2 tok/s
+(−13%). Applying the adapter added a steady ~5% to TPOT at every concurrency (54.7 → 57.4 ms
+at 1 user, 118.7 → 126.5 ms at 32) and ~11% to TTFT, since prefill runs it on every prompt token.
+The overhead doesn't shrink with batch size: the adapter's work grows with the number of tokens,
+while the base weights are read once per step either way.
+
 ### 8.4 Mixed traffic: two adapters in one batch
 
 Two clients at once, each with 16 users on a different adapter. **Restart the server first**
@@ -559,7 +566,10 @@ wait
 ```
 
 Add their two `tok/s @16` together and compare with `lora-r16` at 32 users: if the totals are
-close, batching across adapters costs little. With more distinct adapters than `--max-loras`,
+close, batching across adapters costs little. Our run: TPOT 120.5 ms with 16 + 16 users on two
+adapters vs 126.5 ms with 32 users on one, so mixing adapters in a batch costs nothing
+measurable. Compare TPOT rather than summed tok/s: the two clients don't start and finish at
+exactly the same time, so each one's tok/s covers a different window. With more distinct adapters than `--max-loras`,
 requests wait for a free slot (adapters are swapped in from CPU, up to `--max-cpu-loras`).
 
 ### 8.5 Quality: final adapter vs step 250
