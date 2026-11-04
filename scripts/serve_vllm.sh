@@ -12,6 +12,8 @@ SERVED_NAME="${SERVED_NAME:-my-model}"
 BASE_MODEL="${BASE_MODEL:-models/base}"
 ADAPTER_PATH="${ADAPTER_PATH:-outputs/qwen7b-lora/final}"
 ADAPTER_NAME="${ADAPTER_NAME:-my-lora}"
+# More adapters on the same base, space-separated: EXTRA_LORAS="ckpt250=outputs/qwen7b-lora/checkpoint-250"
+EXTRA_LORAS="${EXTRA_LORAS:-}"
 # Localhost only by default; reach it from a laptop with: ssh -L 8000:localhost:8000 <server>
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-8000}"
@@ -29,10 +31,11 @@ COMMON=(--host "$HOST" --port "$PORT"
         --served-model-name "$SERVED_NAME")
 
 if [[ "$MODE" == "lora" ]]; then
-  # Base model is reachable as "$SERVED_NAME", the adapter as "$ADAPTER_NAME".
+  # Base model is reachable as "$SERVED_NAME", each adapter by its name.
+  # shellcheck disable=SC2086  # EXTRA_LORAS is a list
   exec vllm serve "$BASE_MODEL" "${COMMON[@]}" \
     --enable-lora \
-    --lora-modules "$ADAPTER_NAME=$ADAPTER_PATH" \
+    --lora-modules "$ADAPTER_NAME=$ADAPTER_PATH" $EXTRA_LORAS \
     --max-lora-rank "$MAX_LORA_RANK" \
     --max-loras 2 "$@"
 elif [[ "$MODE" == "model" ]]; then

@@ -494,22 +494,99 @@ before trusting a number.
 ## Step 8: Serve the adapter (multi-LoRA)
 
 **Learn:** vLLM can serve the base model plus several adapters from one GPU and pick one per
-request. That's how one model can serve many customers or tasks.
+request, by the `model` field. Requests for different adapters share one batch: the base
+weights are read once per decode step, and each request adds its own small `x·A·B` (a
+"punica"/SGMV kernel applies a different adapter to each row of the batch). That's how one
+GPU serves many fine-tunes, and what it costs is what this step measures.
+
+**Prediction.** An adapter adds 81 MB of weights to the 15.2 GB read every decode step (+0.5%),
+but 196 extra small matmuls per token. Expect TPOT 5–15% higher than `base` at 1 user, and the
+gap to narrow as the batch grows. Merging (Step 9) removes it.
+
+### 8.1 Start the server with two adapters
+
+The final adapter, plus the step-250 checkpoint as a second one (less trained; see Step 6's
+eval-loss curve). Any PEFT checkpoint directory works as an adapter.
 
 ```bash
-source ~/venvs/serve/bin/activate
-MODE=lora SERVED_NAME=base ADAPTER_NAME=my-lora ADAPTER_PATH=outputs/qwen7b-lora/final bash scripts/serve_vllm.sh
+tmux new -s vllm
+cd ~/LLM_FineTuning_Serving && source ~/venvs/serve/bin/activate
+MODE=lora SERVED_NAME=base ADAPTER_NAME=my-lora ADAPTER_PATH=outputs/qwen7b-lora/final \
+  EXTRA_LORAS="ckpt250=outputs/qwen7b-lora/checkpoint-250" \
+  ./scripts/serve_vllm.sh
 ```
 
+In the startup log, compare with Step 4: the KV-cache size and "Maximum concurrency" are a
+little lower, because `--enable-lora` reserves memory for `--max-loras 2` adapter slots of
+`--max-lora-rank 16` and their kernels' workspace.
+
+### 8.2 One server, three models
+
 ```bash
-python scripts/chat_client.py --model my-lora     # fine-tuned
-python scripts/chat_client.py --model base        # same server, base model
-python scripts/benchmark.py --model my-lora --label lora-r16
+curl -s localhost:8000/v1/models -H "Authorization: Bearer $(cat ~/.vllm_api_key)" | python -m json.tool
+python scripts/chat_client.py --model base    --prompt "What is EBITDA? One sentence."
+python scripts/chat_client.py --model my-lora --prompt "What is EBITDA? One sentence."
+```
+
+`/v1/models` lists `base`, `my-lora` and `ckpt250`; the adapters show `"parent": "base"`.
+
+### 8.3 Benchmark: what does the adapter cost?
+
+Same settings as Step 5, so the numbers line up in the report. Run benchmarks before any other
+traffic: prefix caching would otherwise reuse earlier prompts and flatter TTFT (the cache is kept
+per adapter, so `base` and `my-lora` don't share it).
+
+```bash
+B="--concurrency 1,4,8,16,32 --max-tokens 128"
+python scripts/benchmark.py --model base    --label base-on-lora-server $B
+python scripts/benchmark.py --model my-lora --label lora-r16 $B
 python scripts/report.py
 ```
 
-**Look for:** the throughput of `lora-r16` compared with `base`. Applying the adapter at
-runtime adds a small overhead, which merging (Step 9) removes.
+* `base` (Step 5) vs `base-on-lora-server`: the cost of just enabling LoRA (less KV cache).
+* `base-on-lora-server` vs `lora-r16`: the per-request cost of applying the adapter.
+
+### 8.4 Mixed traffic: two adapters in one batch
+
+Two clients at once, each with 16 users on a different adapter. **Restart the server first**
+(Ctrl-C, then the 8.1 command): 8.3 put these prompts in `my-lora`'s prefix cache but not in
+`ckpt250`'s, which would make the comparison unfair.
+
+```bash
+python scripts/benchmark.py --model my-lora --label mixed-my-lora --concurrency 16 --max-tokens 128 &
+python scripts/benchmark.py --model ckpt250 --label mixed-ckpt250 --concurrency 16 --max-tokens 128
+wait
+```
+
+Add their two `tok/s @16` together and compare with `lora-r16` at 32 users: if the totals are
+close, batching across adapters costs little. With more distinct adapters than `--max-loras`,
+requests wait for a free slot (adapters are swapped in from CPU, up to `--max-cpu-loras`).
+
+### 8.5 Quality: final adapter vs step 250
+
+```bash
+python scripts/eval_extraction.py --model ckpt250 --label lora-r16-step250
+python scripts/report.py
+```
+
+Step 6's eval loss was lower in mid-training than at the end. Does the step-250 checkpoint
+extract as well as the final one? Loss and field accuracy don't always agree.
+
+### 8.6 (Optional) Load an adapter at runtime
+
+Restart the server with `VLLM_ALLOW_RUNTIME_LORA_UPDATING=True` in front of the command, then:
+
+```bash
+K="Authorization: Bearer $(cat ~/.vllm_api_key)"
+curl -s localhost:8000/v1/load_lora_adapter -H "$K" -H "Content-Type: application/json" \
+  -d '{"lora_name": "ckpt300", "lora_path": "outputs/qwen7b-lora/checkpoint-300"}'
+python scripts/chat_client.py --model ckpt300
+curl -s localhost:8000/v1/unload_lora_adapter -H "$K" -H "Content-Type: application/json" \
+  -d '{"lora_name": "ckpt300"}'
+```
+
+This is how a platform adds a customer's fine-tune without restarting. Anyone with the API key
+can load files from the server's disk this way, so leave it off in production.
 
 ---
 
