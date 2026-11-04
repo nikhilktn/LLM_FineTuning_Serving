@@ -2,18 +2,18 @@
  "summary": {
   "examples": 287,
   "json_valid": 0.9965,
-  "field_accuracy": 0.8143,
-  "exact_match": 0.2997,
-  "hallucination_rate": 0.7182,
+  "field_accuracy": 0.8247,
+  "exact_match": 0.338,
+  "hallucination_rate": 0.691,
   "outcomes": {
-   "correct": 1942,
-   "hallucinated": 237,
+   "correct": 1967,
+   "hallucinated": 208,
    "sign_error": 51,
-   "wrong": 155
+   "wrong": 159
   },
   "per_field_accuracy": {
    "amounts_in": 0.9021,
-   "cash_and_equivalents": 0.7895,
+   "cash_and_equivalents": 0.9158,
    "cost_of_revenue": 0.6042,
    "eps_basic": 0.9583,
    "eps_diluted": 0.9375,
@@ -22,26 +22,29 @@
    "gross_profit": 0.3438,
    "income_tax": 0.4583,
    "investing_cash_flow": 0.9789,
-   "net_income": 0.7801,
+   "net_income": 0.8063,
    "operating_cash_flow": 0.9474,
    "operating_income": 0.7396,
    "revenue": 0.9479,
    "total_assets": 0.9579,
    "total_current_assets": 0.9789,
    "total_current_liabilities": 0.9789,
-   "total_equity": 0.3474,
+   "total_equity": 0.4316,
    "total_liabilities": 0.7684,
    "total_liabilities_and_equity": 0.9053
   },
   "per_statement_accuracy": {
-   "balance_sheet": 0.8363,
-   "cash_flow": 0.9193,
-   "income_statement": 0.7323
+   "balance_sheet": 0.8596,
+   "cash_flow": 0.9211,
+   "income_statement": 0.7365
   },
   "label": "base",
   "model": "base",
   "seconds": 200.1,
-  "avg_completion_tokens": 115.1
+  "avg_completion_tokens": 115.1,
+  "rescored_from": 287,
+  "dropped": 0,
+  "not_scored": 0
  },
  "results": [
   {
@@ -323,7 +326,7 @@
    "gold": {
     "fiscal_period_end": "2024-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 290114,
     "total_current_assets": null,
     "total_assets": 3261519,
     "total_current_liabilities": null,
@@ -346,7 +349,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -634,7 +637,7 @@
     "gross_profit": null,
     "operating_income": 2987.7,
     "income_tax": 40.5,
-    "net_income": null,
+    "net_income": 2200.1,
     "eps_basic": 4.44,
     "eps_diluted": 4.42
    },
@@ -659,7 +662,7 @@
     "gross_profit": "hallucinated",
     "operating_income": "correct",
     "income_tax": "correct",
-    "net_income": "hallucinated",
+    "net_income": "wrong",
     "eps_basic": "correct",
     "eps_diluted": "correct"
    },
@@ -1006,7 +1009,7 @@
     "total_assets": 35594,
     "total_current_liabilities": 8672,
     "total_liabilities": 29517,
-    "total_equity": null,
+    "total_equity": 6077,
     "total_liabilities_and_equity": 35594
    },
    "raw": "{\n  \"fiscal_period_end\": \"2020-09-27\",\n  \"amounts_in\": \"millions\",\n  \"cash_and_equivalents\": 6707,\n  \"total_current_assets\": 18519,\n  \"total_assets\": 35594,\n  \"total_current_liabilities\": 8672,\n  \"total_liabilities\": 29517,\n  \"total_equity\": 6077,\n  \"total_liabilities_and_equity\": 35594\n}",
@@ -1029,7 +1032,7 @@
     "total_assets": "correct",
     "total_current_liabilities": "correct",
     "total_liabilities": "correct",
-    "total_equity": "hallucinated",
+    "total_equity": "correct",
     "total_liabilities_and_equity": "correct"
    },
    "completion_tokens": 125
@@ -1156,7 +1159,7 @@
     "total_assets": 4290.5,
     "total_current_liabilities": 614.1,
     "total_liabilities": 2464.0,
-    "total_equity": null,
+    "total_equity": 1826.5,
     "total_liabilities_and_equity": 4290.5
    },
    "raw": "{\n  \"fiscal_period_end\": \"2020-12-31\",\n  \"amounts_in\": \"millions\",\n  \"cash_and_equivalents\": 817.6,\n  \"total_current_assets\": 3424.8,\n  \"total_assets\": 4290.5,\n  \"total_current_liabilities\": 614.1,\n  \"total_liabilities\": 2464,\n  \"total_equity\": 1826.5,\n  \"total_liabilities_and_equity\": 4290.5\n}",
@@ -1179,7 +1182,7 @@
     "total_assets": "correct",
     "total_current_liabilities": "correct",
     "total_liabilities": "correct",
-    "total_equity": "hallucinated",
+    "total_equity": "correct",
     "total_liabilities_and_equity": "correct"
    },
    "completion_tokens": 131
@@ -1195,7 +1198,7 @@
     "total_assets": 55154,
     "total_current_liabilities": 10504,
     "total_liabilities": 28880,
-    "total_equity": null,
+    "total_equity": 26274,
     "total_liabilities_and_equity": 55154
    },
    "raw": "{\n  \"fiscal_period_end\": \"2024-09-29\",\n  \"amounts_in\": \"millions\",\n  \"cash_and_equivalents\": 7849,\n  \"total_current_assets\": 25231,\n  \"total_assets\": 55154,\n  \"total_current_liabilities\": 10504,\n  \"total_liabilities\": 28880,\n  \"total_equity\": 26274,\n  \"total_liabilities_and_equity\": 55154\n}",
@@ -1218,7 +1221,7 @@
     "total_assets": "correct",
     "total_current_liabilities": "correct",
     "total_liabilities": "correct",
-    "total_equity": "hallucinated",
+    "total_equity": "correct",
     "total_liabilities_and_equity": "correct"
    },
    "completion_tokens": 127
@@ -1480,7 +1483,7 @@
     "gross_profit": 1434728,
     "operating_income": 847142,
     "income_tax": 134650,
-    "net_income": null,
+    "net_income": 550822,
     "eps_basic": 2.61,
     "eps_diluted": 2.59
    },
@@ -1505,7 +1508,7 @@
     "gross_profit": "correct",
     "operating_income": "correct",
     "income_tax": "correct",
-    "net_income": "hallucinated",
+    "net_income": "correct",
     "eps_basic": "correct",
     "eps_diluted": "correct"
    },
@@ -1777,7 +1780,7 @@
     "gross_profit": null,
     "operating_income": 4303.6,
     "income_tax": -39.2,
-    "net_income": null,
+    "net_income": 2967.1,
     "eps_basic": 5.6,
     "eps_diluted": 5.58
    },
@@ -1802,7 +1805,7 @@
     "gross_profit": "hallucinated",
     "operating_income": "correct",
     "income_tax": "correct",
-    "net_income": "hallucinated",
+    "net_income": "wrong",
     "eps_basic": "correct",
     "eps_diluted": "correct"
    },
@@ -2075,7 +2078,7 @@
    "gold": {
     "fiscal_period_end": "2020-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 377,
     "total_current_assets": null,
     "total_assets": 125987,
     "total_current_liabilities": null,
@@ -2098,7 +2101,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -2114,12 +2117,12 @@
    "gold": {
     "fiscal_period_end": "2024-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 1089.0,
     "total_current_assets": 1951.8,
     "total_assets": 8235.4,
     "total_current_liabilities": 2698.4,
     "total_liabilities": null,
-    "total_equity": null,
+    "total_equity": 692.1,
     "total_liabilities_and_equity": 8235.4
    },
    "raw": "{\n  \"fiscal_period_end\": \"2024-12-31\",\n  \"amounts_in\": \"millions\",\n  \"cash_and_equivalents\": 1089.0,\n  \"total_current_assets\": 1951.8,\n  \"total_assets\": 8235.4,\n  \"total_current_liabilities\": 2698.4,\n  \"total_liabilities\": null,\n  \"total_equity\": 692.1,\n  \"total_liabilities_and_equity\": 8235.4\n}",
@@ -2137,12 +2140,12 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
     "total_liabilities": "correct",
-    "total_equity": "hallucinated",
+    "total_equity": "correct",
     "total_liabilities_and_equity": "correct"
    },
    "completion_tokens": 128
@@ -4118,7 +4121,7 @@
    "gold": {
     "fiscal_period_end": "2024-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 704,
     "total_current_assets": null,
     "total_assets": 111617,
     "total_current_liabilities": null,
@@ -4141,7 +4144,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -4187,7 +4190,7 @@
    "gold": {
     "fiscal_period_end": "2020-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 380463,
     "total_current_assets": null,
     "total_assets": 2819627,
     "total_current_liabilities": null,
@@ -4210,7 +4213,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -4688,7 +4691,7 @@
    "gold": {
     "fiscal_period_end": "2020-08-31",
     "amounts_in": null,
-    "net_income": null,
+    "net_income": 5185313,
     "operating_cash_flow": 8215152,
     "investing_cash_flow": -1894519,
     "financing_cash_flow": -4049092
@@ -4705,7 +4708,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "hallucinated",
-    "net_income": "hallucinated",
+    "net_income": "wrong",
     "operating_cash_flow": "wrong",
     "investing_cash_flow": "wrong",
     "financing_cash_flow": "wrong"
@@ -5036,7 +5039,7 @@
    "gold": {
     "fiscal_period_end": "2020-01-31",
     "amounts_in": "thousands",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 264798,
     "total_current_assets": 1171636,
     "total_assets": 1404906,
     "total_current_liabilities": 493096,
@@ -5059,7 +5062,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -5681,7 +5684,7 @@
    "gold": {
     "fiscal_period_end": "2024-10-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 3253,
     "total_current_assets": 20760,
     "total_assets": 39909,
     "total_current_liabilities": 28687,
@@ -5704,7 +5707,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -5896,7 +5899,7 @@
     "gross_profit": null,
     "operating_income": 9417,
     "income_tax": 1491,
-    "net_income": null,
+    "net_income": 3434,
     "eps_basic": 12.25,
     "eps_diluted": 12.12
    },
@@ -5921,7 +5924,7 @@
     "gross_profit": "hallucinated",
     "operating_income": "correct",
     "income_tax": "correct",
-    "net_income": "hallucinated",
+    "net_income": "correct",
     "eps_basic": "correct",
     "eps_diluted": "correct"
    },
@@ -6266,7 +6269,7 @@
    "gold": {
     "fiscal_period_end": "2024-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 3544,
     "total_current_assets": 18570,
     "total_assets": 48935,
     "total_current_liabilities": 12811,
@@ -6289,7 +6292,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -6305,7 +6308,7 @@
    "gold": {
     "fiscal_period_end": "2024-08-31",
     "amounts_in": null,
-    "net_income": null,
+    "net_income": 7419197,
     "operating_cash_flow": 9131027,
     "investing_cash_flow": -7061818,
     "financing_cash_flow": -6063508
@@ -6322,7 +6325,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "hallucinated",
-    "net_income": "hallucinated",
+    "net_income": "correct",
     "operating_cash_flow": "correct",
     "investing_cash_flow": "correct",
     "financing_cash_flow": "correct"
@@ -6891,7 +6894,7 @@
    "gold": {
     "fiscal_period_end": "2020-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 844,
     "total_current_assets": 12919,
     "total_assets": 42434,
     "total_current_liabilities": 10491,
@@ -6914,7 +6917,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -7241,7 +7244,7 @@
     "total_assets": 6484.5,
     "total_current_liabilities": 2932.0,
     "total_liabilities": 4381.9,
-    "total_equity": null,
+    "total_equity": 2102.6,
     "total_liabilities_and_equity": 6484.5
    },
    "raw": "{\n  \"fiscal_period_end\": \"2024-12-31\",\n  \"amounts_in\": \"millions\",\n  \"cash_and_equivalents\": 606.1,\n  \"total_current_assets\": 4301.4,\n  \"total_assets\": 6484.5,\n  \"total_current_liabilities\": 2932.0,\n  \"total_liabilities\": 4381.9,\n  \"total_equity\": 2102.6,\n  \"total_liabilities_and_equity\": 6484.5\n}",
@@ -7264,7 +7267,7 @@
     "total_assets": "correct",
     "total_current_liabilities": "correct",
     "total_liabilities": "correct",
-    "total_equity": "hallucinated",
+    "total_equity": "correct",
     "total_liabilities_and_equity": "correct"
    },
    "completion_tokens": 134
@@ -7430,7 +7433,7 @@
     "total_assets": 11751808,
     "total_current_liabilities": 1877533,
     "total_liabilities": 3064993,
-    "total_equity": null,
+    "total_equity": 8686815,
     "total_liabilities_and_equity": 11751808
    },
    "raw": "{\n  \"fiscal_period_end\": \"2020-12-31\",\n  \"amounts_in\": \"thousands\",\n  \"cash_and_equivalents\": 5988187,\n  \"total_current_assets\": 8133379,\n  \"total_assets\": 11751808,\n  \"total_current_liabilities\": 1877533,\n  \"total_liabilities\": 3064993,\n  \"total_equity\": 8686815,\n  \"total_liabilities_and_equity\": 11751808\n}",
@@ -7453,7 +7456,7 @@
     "total_assets": "correct",
     "total_current_liabilities": "correct",
     "total_liabilities": "correct",
-    "total_equity": "hallucinated",
+    "total_equity": "correct",
     "total_liabilities_and_equity": "correct"
    },
    "completion_tokens": 144
@@ -7793,7 +7796,7 @@
     "gross_profit": null,
     "operating_income": null,
     "income_tax": 426,
-    "net_income": null,
+    "net_income": 7558,
     "eps_basic": 16.99,
     "eps_diluted": 16.96
    },
@@ -7818,7 +7821,7 @@
     "gross_profit": "hallucinated",
     "operating_income": "hallucinated",
     "income_tax": "sign_error",
-    "net_income": "hallucinated",
+    "net_income": "correct",
     "eps_basic": "correct",
     "eps_diluted": "correct"
    },
@@ -7907,7 +7910,7 @@
     "gross_profit": 9901664,
     "operating_income": 749505,
     "income_tax": 77909,
-    "net_income": null,
+    "net_income": 215475,
     "eps_basic": 0.42,
     "eps_diluted": 0.42
    },
@@ -7932,7 +7935,7 @@
     "gross_profit": "correct",
     "operating_income": "correct",
     "income_tax": "correct",
-    "net_income": "hallucinated",
+    "net_income": "correct",
     "eps_basic": "correct",
     "eps_diluted": "correct"
    },
@@ -8099,7 +8102,7 @@
     "gross_profit": null,
     "operating_income": 8153,
     "income_tax": 2379,
-    "net_income": null,
+    "net_income": 8458,
     "eps_basic": 23.17,
     "eps_diluted": 22.96
    },
@@ -8124,7 +8127,7 @@
     "gross_profit": "hallucinated",
     "operating_income": "correct",
     "income_tax": "correct",
-    "net_income": "hallucinated",
+    "net_income": "wrong",
     "eps_basic": "correct",
     "eps_diluted": "correct"
    },
@@ -8522,7 +8525,7 @@
     "total_assets": 5613004,
     "total_current_liabilities": 1489653,
     "total_liabilities": null,
-    "total_equity": null,
+    "total_equity": 3129378,
     "total_liabilities_and_equity": 5613004
    },
    "raw": "{\n  \"fiscal_period_end\": \"2024-09-30\",\n  \"amounts_in\": \"thousands\",\n  \"cash_and_equivalents\": 1074602,\n  \"total_current_assets\": 2109471,\n  \"total_assets\": 5613004,\n  \"total_current_liabilities\": 1489653,\n  \"total_liabilities\": 2493626,\n  \"total_equity\": 3129378,\n  \"total_liabilities_and_equity\": 5613004\n}",
@@ -8545,7 +8548,7 @@
     "total_assets": "correct",
     "total_current_liabilities": "correct",
     "total_liabilities": "hallucinated",
-    "total_equity": "hallucinated",
+    "total_equity": "correct",
     "total_liabilities_and_equity": "correct"
    },
    "completion_tokens": 142
@@ -8943,7 +8946,7 @@
    "gold": {
     "fiscal_period_end": "2020-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 765.2,
     "total_current_assets": 1291.3,
     "total_assets": 6432.9,
     "total_current_liabilities": 2314.2,
@@ -8966,7 +8969,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -9642,7 +9645,7 @@
    "gold": {
     "fiscal_period_end": "2024-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 1351,
     "total_current_assets": 13242,
     "total_assets": 68497,
     "total_current_liabilities": 19549,
@@ -9665,7 +9668,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -9720,7 +9723,7 @@
    "gold": {
     "fiscal_period_end": "2020-12-31",
     "amounts_in": "millions",
-    "cash_and_equivalents": null,
+    "cash_and_equivalents": 3619,
     "total_current_assets": 9979,
     "total_assets": 67810,
     "total_current_liabilities": 15159,
@@ -9743,7 +9746,7 @@
    "fields": {
     "fiscal_period_end": "correct",
     "amounts_in": "correct",
-    "cash_and_equivalents": "hallucinated",
+    "cash_and_equivalents": "correct",
     "total_current_assets": "correct",
     "total_assets": "correct",
     "total_current_liabilities": "correct",
@@ -10400,7 +10403,7 @@
     "total_assets": 4677920,
     "total_current_liabilities": 1288279,
     "total_liabilities": null,
-    "total_equity": null,
+    "total_equity": 2232268,
     "total_liabilities_and_equity": 4677920
    },
    "raw": "{\n  \"fiscal_period_end\": \"2020-09-30\",\n  \"amounts_in\": \"thousands\",\n  \"cash_and_equivalents\": 849556,\n  \"total_current_assets\": 1793476,\n  \"total_assets\": 4677920,\n  \"total_current_liabilities\": 1288279,\n  \"total_liabilities\": 3419652,\n  \"total_equity\": 2232268,\n  \"total_liabilities_and_equity\": 4677920\n}",
@@ -10423,7 +10426,7 @@
     "total_assets": "correct",
     "total_current_liabilities": "correct",
     "total_liabilities": "hallucinated",
-    "total_equity": "hallucinated",
+    "total_equity": "correct",
     "total_liabilities_and_equity": "correct"
    },
    "completion_tokens": 141

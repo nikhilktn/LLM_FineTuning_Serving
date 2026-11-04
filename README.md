@@ -253,8 +253,8 @@ python scripts/build_10k_dataset.py --input-dir data/raw/10k --sectors data/raw/
 
 Data used: the main 10-K document (not exhibits or 10-K/A amendments) for FY2020 and FY2024 of each
 S&P 500 company, falling back to a neighbouring year when a filing has no inline XBRL: 983 filings,
-2,865 examples (2,578 train from 441 companies, 287 eval from 49 held-out companies). 99.97% of
-label values appear verbatim in their prompt.
+2,872 examples (2,585 train from 441 companies, 287 eval from 49 held-out companies). Every
+numeric label appears in its prompt.
 The years are 4 apart because statements show 2–3 years of comparatives, and this way no
 number appears in both filings.
 
@@ -451,9 +451,39 @@ python scripts/test_adapter.py --base models/base --adapter outputs/qwen7b-lora/
     --prompt "<a prompt typical of your task>"
 
 source ~/venvs/serve/bin/activate
+MODE=lora ./scripts/serve_vllm.sh        # in tmux; the adapter is served as "my-lora"
+python scripts/eval_extraction.py --model my-lora --label lora-r16
+# stop the server, then:
 python scripts/evaluate.py --model models/base --adapter outputs/qwen7b-lora/final --label lora-r16
 python scripts/report.py
 ```
+
+**Our result** (287 examples from 49 unseen companies):
+
+| | base | lora-r16 |
+|---|---|---|
+| Field accuracy | 82.5% | **97.9%** |
+| Exact match | 33.8% | **88.5%** |
+| Hallucination rate | 69.1% | **8.9%** |
+| Sign errors | 51 | **3** |
+| Perplexity | 1.1306 | **1.0088** |
+
+**Read the errors, not just the score.** The first scoring gave the adapter 97.0% and 15.9%
+hallucination. Most "hallucinations" turned out to be the right number on a correctly named line,
+tagged with an XBRL concept the builder didn't know (equity including NCI when there is no NCI,
+cash including restricted cash, `ProfitLoss` for net income). After adding those concepts to
+`build_10k_dataset.py`, the saved predictions were re-scored without the GPU:
+
+```bash
+cp data/eval.jsonl data/eval_v1.jsonl     # the file the predictions were made on
+python scripts/build_10k_dataset.py
+python scripts/rescore_extraction.py --old-eval-file data/eval_v1.jsonl \
+    results/extract_base.json results/extract_lora-r16.json
+```
+
+The base model's hallucination rate barely moved (71.8% → 69.1%): it really does calculate
+missing lines. The adapter's halved. Evaluation labels are part of the experiment; check them
+before trusting a number.
 
 **Look for:**
 * **Perplexity** of `lora-r16` should be clearly lower than `base`.
@@ -630,7 +660,8 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
 ## Layout
 
 ```
-scripts/       check_env, download_model, prepare_data, train_lora, plot_training, test_adapter,
+scripts/       check_env, download_model, prepare_data, build_10k_dataset, train_lora, plot_training,
+               test_adapter, eval_extraction, rescore_extraction,
                merge_lora, quantize, evaluate, benchmark, report, serve_vllm, chat_client
 deploy/        vllm.service
 models/        base, merged and quantized models            (git-ignored)
