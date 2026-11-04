@@ -399,8 +399,8 @@ Watch it in two more shells:
 
 ```bash
 watch -n 2 nvidia-smi                                   # memory and utilisation
-tensorboard --logdir outputs/qwen7b-lora/runs --port 6006 --bind_all   # loss curves
-# on your laptop: ssh -L 6006:localhost:6006 user@server, then open http://localhost:6006
+tensorboard --logdir outputs --host 127.0.0.1 --port 6006   # loss curves, every run in outputs/
+# on your laptop: ssh -N -L 6006:localhost:6006 user@server, then open http://localhost:6006
 ```
 
 **What each setting does:**
@@ -417,6 +417,26 @@ tensorboard --logdir outputs/qwen7b-lora/runs --port 6006 --bind_all   # loss cu
   or more data.
 * `outputs/qwen7b-lora/train_summary.json` records time, **peak GPU memory** and final eval
   loss. Keep it for the experiments.
+
+**Save the curves with the results** (`outputs/` is git-ignored):
+
+```bash
+python scripts/plot_training.py --run-dir outputs/qwen7b-lora --label lora-r16 --steps-per-epoch 161
+```
+
+This writes `results/train_lora-r16.json` (summary plus every logged scalar) and a chart. Our run
+(2 epochs, 322 steps, 208.6 min, peak 8.11 GB):
+
+![QLoRA r=16 training curves](results/train_lora-r16.png)
+
+* **Learning rate:** 10-step warmup to 2e-4, then a cosine decay to 0.
+* **Loss:** train loss falls from 0.067 to about 0.01 in the first 40 steps; most of the
+  learning happens there. After that it only polishes.
+* **Eval loss is lowest at step 150 (0.0078), near the end of epoch 1.** It rises to 0.0089 at
+  step 200, then settles at 0.0082, while train loss keeps falling to about 0.004. That widening
+  gap is the start of memorising the training companies: the second epoch bought nothing on
+  held-out data. Mild, not harmful, but one epoch would have done (half the time).
+* **Gradient norm** stays small (0.02 to 0.14) with no spikes: the learning rate is safe.
 
 **If you run out of memory:** `--batch-size 1 --grad-accum 16`, then lower `--max-length`.
 **To resume:** `--resume outputs/qwen7b-lora/checkpoint-XXX`.
@@ -610,11 +630,11 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
 ## Layout
 
 ```
-scripts/       check_env, download_model, prepare_data, train_lora, test_adapter,
+scripts/       check_env, download_model, prepare_data, train_lora, plot_training, test_adapter,
                merge_lora, quantize, evaluate, benchmark, report, serve_vllm, chat_client
 deploy/        vllm.service
 models/        base, merged and quantized models            (git-ignored)
 outputs/       LoRA checkpoints, adapters, TensorBoard logs (git-ignored)
 data/          prepared train/eval JSONL                     (git-ignored)
-results/       eval_*.json, bench_*.json, committed so progress is visible in the PR
+results/       train_*, eval_*, extract_*, bench_*, committed so progress is visible in the PR
 ```
