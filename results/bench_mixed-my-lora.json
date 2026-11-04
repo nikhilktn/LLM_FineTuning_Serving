@@ -1,0 +1,15 @@
+{
+  "label": "mixed-my-lora",
+  "model": "my-lora",
+  "max_tokens": 128,
+  "levels": [
+    {
+      "concurrency": 16,
+      "ttft_p50_ms": 3930.7,
+      "ttft_p95_ms": 11294.9,
+      "tpot_p50_ms": 120.46,
+      "output_tok_per_s": 100.5,
+      "requests_per_s": 0.79
+    }
+  ]
+}

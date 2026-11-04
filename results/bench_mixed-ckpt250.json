@@ -1,0 +1,15 @@
+{
+  "label": "mixed-ckpt250",
+  "model": "ckpt250",
+  "max_tokens": 128,
+  "levels": [
+    {
+      "concurrency": 16,
+      "ttft_p50_ms": 3013.5,
+      "ttft_p95_ms": 4009.8,
+      "tpot_p50_ms": 120.46,
+      "output_tok_per_s": 110.8,
+      "requests_per_s": 0.87
+    }
+  ]
+}

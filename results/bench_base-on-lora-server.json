@@ -1,0 +1,47 @@
+{
+  "label": "base-on-lora-server",
+  "model": "base",
+  "max_tokens": 128,
+  "levels": [
+    {
+      "concurrency": 1,
+      "ttft_p50_ms": 304.5,
+      "ttft_p95_ms": 478.1,
+      "tpot_p50_ms": 54.68,
+      "output_tok_per_s": 17.6,
+      "requests_per_s": 0.14
+    },
+    {
+      "concurrency": 4,
+      "ttft_p50_ms": 799.4,
+      "ttft_p95_ms": 1234.9,
+      "tpot_p50_ms": 58.87,
+      "output_tok_per_s": 61.7,
+      "requests_per_s": 0.48
+    },
+    {
+      "concurrency": 8,
+      "ttft_p50_ms": 1104.1,
+      "ttft_p95_ms": 2309.3,
+      "tpot_p50_ms": 66.27,
+      "output_tok_per_s": 106.0,
+      "requests_per_s": 0.83
+    },
+    {
+      "concurrency": 16,
+      "ttft_p50_ms": 1727.9,
+      "ttft_p95_ms": 4212.5,
+      "tpot_p50_ms": 82.93,
+      "output_tok_per_s": 164.7,
+      "requests_per_s": 1.29
+    },
+    {
+      "concurrency": 32,
+      "ttft_p50_ms": 2631.5,
+      "ttft_p95_ms": 8949.8,
+      "tpot_p50_ms": 118.71,
+      "output_tok_per_s": 194.2,
+      "requests_per_s": 1.52
+    }
+  ]
+}
