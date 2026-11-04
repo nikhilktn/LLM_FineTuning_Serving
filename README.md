@@ -612,19 +612,91 @@ can load files from the server's disk this way, so leave it off in production.
 
 ## Step 9: Merge the adapter
 
-**Learn:** `W_merged = W + (alpha/r)·B·A`. After merging it's an ordinary model again, which
-quantization tools need.
+**Learn:** `W_merged = W + (alpha/r)·B·A`. After merging it's an ordinary model again: no
+adapter overhead when serving, and quantization tools (Step 10) need a plain model.
+
+**What merging costs: bf16 rounding.** The adapter's changes are tiny (median 8e-5 against
+weights of about 1e-2), and bf16 keeps only about 3 significant digits, so adding them rounds a
+lot of the update away. Measured on three layers of our adapter:
+
+| Layer | Weights left unchanged by the merge | Error in the stored update |
+|---|---|---|
+| L10 gate_proj | 24% | 21% |
+| L10 q_proj | 25% | 24% |
+| L27 down_proj | 60% | 41% |
+
+Served as an adapter (Step 8), `x·W` and `x·A·B` are computed separately, so nothing is lost.
+Merged, the update is distorted by 20–40%. It's still small next to the whole layer (the update
+is under 1% of `W`, so the error is ~0.2% of the layer output), and the rounding is random rather
+than systematic. Prediction: the merged model matches `lora-r16` within noise, with a few answers
+flipping either way.
+
+### 9.1 Merge (CPU, about 5 minutes)
+
+The merge runs in system RAM (about 16 GB for 7B), so it doesn't need the GPU. Stop vLLM anyway,
+since the next steps serve the merged model.
 
 ```bash
-source ~/venvs/train/bin/activate
+tmux attach -t vllm        # Ctrl-C, then Ctrl-b d
+cd ~/LLM_FineTuning_Serving && source ~/venvs/train/bin/activate
 python scripts/merge_lora.py --base models/base --adapter outputs/qwen7b-lora/final --out models/merged-qwen7b
 ```
 
-This runs on CPU in bf16 using system RAM: about 16 GB for 7B and 30 GB for 14B, both fine
-with 64 GB. A 32B model would need about 65 GB and spill into swap.
+### 9.2 Check what you got
 
-**Sanity check:** `evaluate.py --model models/merged-qwen7b --label merged` should give almost
-the same perplexity as `lora-r16`.
+```bash
+du -sh models/base models/merged-qwen7b          # both ~15 GB: merging adds no size
+ls models/merged-qwen7b                          # model-*.safetensors, config.json, tokenizer; no adapter files
+python - <<'EOF'
+from safetensors import safe_open
+import glob, torch
+keys = [k for f in glob.glob("models/merged-qwen7b/*.safetensors") for k in safe_open(f, "pt").keys()]
+print(len(keys), "tensors; LoRA tensors left:", sum("lora" in k for k in keys))
+name = "model.layers.10.mlp.gate_proj.weight"
+get = lambda d: next(safe_open(f, "pt").get_tensor(name) for f in glob.glob(f"{d}/*.safetensors") if name in safe_open(f, "pt").keys())
+base, merged = get("models/base"), get("models/merged-qwen7b")
+print(name, merged.dtype, "share of weights changed:", f"{(base != merged).float().mean():.0%}")
+EOF
+```
+
+Expect 339 tensors (the same as the base model), 0 LoRA tensors, bf16, and about 76% of that layer's
+weights changed.
+
+### 9.3 Serve it and measure quality
+
+```bash
+source ~/venvs/serve/bin/activate
+MODE=model MODEL_PATH=models/merged-qwen7b SERVED_NAME=merged ./scripts/serve_vllm.sh   # in tmux
+```
+
+The startup log should show the same KV cache as Step 4 (about 40,880 tokens), because no memory
+is reserved for adapters. Then:
+
+```bash
+python scripts/benchmark.py --model merged --label merged --concurrency 1,4,8,16,32 --max-tokens 128
+python scripts/eval_extraction.py --model merged --label merged
+python scripts/compare_extraction.py results/extract_lora-r16.json results/extract_merged.json
+```
+
+Run the benchmark first, so the prefix cache is empty.
+
+### 9.4 Perplexity (stop the server first)
+
+```bash
+python scripts/evaluate.py --model models/merged-qwen7b --label merged
+python scripts/report.py
+```
+
+**Look for:**
+* **Speed:** `merged` should match `base` (TPOT ~54.7 ms at 1 user, ~224 tok/s at 32), not
+  `lora-r16` (57.4 ms, 183 tok/s). The adapter's ~5% overhead and the smaller KV cache are gone.
+* **Quality:** field accuracy and exact match within noise of `lora-r16` (97.9%, 88.5%).
+  `compare_extraction.py` shows how many answers changed and whether the split is significant.
+* **Perplexity:** close to `lora-r16`'s 1.0088. A slightly higher value is the bf16 rounding above.
+
+**Fallback if quality drops:** merge in fp32 (`dtype=torch.float32` in `merge_lora.py`) and save
+fp32 (30 GB). Served with `--dtype bfloat16` it rounds the same way, so fp32 only helps as the
+input to quantization, where GPTQ sees the exact merged weights.
 
 ## Step 10: Quantize to FP8, INT8 and INT4
 
@@ -756,7 +828,7 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
 
 ```
 scripts/       check_env, download_model, prepare_data, build_10k_dataset, train_lora, plot_training,
-               test_adapter, eval_extraction, rescore_extraction,
+               test_adapter, eval_extraction, rescore_extraction, compare_extraction,
                merge_lora, quantize, evaluate, benchmark, report, serve_vllm, chat_client
 deploy/        vllm.service
 models/        base, merged and quantized models            (git-ignored)
