@@ -516,9 +516,8 @@ MODE=lora SERVED_NAME=base ADAPTER_NAME=my-lora ADAPTER_PATH=outputs/qwen7b-lora
   ./scripts/serve_vllm.sh
 ```
 
-In the startup log, compare with Step 4: the KV-cache size and "Maximum concurrency" are a
-little lower, because `--enable-lora` reserves memory for `--max-loras 2` adapter slots of
-`--max-lora-rank 16` and their kernels' workspace.
+In the startup log, note the KV-cache size. Compare it with a plain server at the **same
+`MAX_MODEL_LEN`**: the context length changes the KV cache much more than LoRA does (see below).
 
 ### 8.2 One server, three models
 
@@ -543,12 +542,15 @@ python scripts/benchmark.py --model my-lora --label lora-r16 $B
 python scripts/report.py
 ```
 
-* `base` (Step 5) vs `base-on-lora-server`: the cost of just enabling LoRA (less KV cache).
 * `base-on-lora-server` vs `lora-r16`: the per-request cost of applying the adapter.
+* `base` (Step 5) vs `base-on-lora-server` is **not** a clean comparison: Step 4/5 ran with
+  `MAX_MODEL_LEN=4096` and this server with 8192.
 
-**Our result.** Enabling LoRA cut the KV cache from 40,880 to 30,832 tokens (−0.55 GB). That
-costs nothing until the cache gets tight: at 32 users `base` fell from 223.6 to 194.2 tok/s
-(−13%). Applying the adapter added a steady ~5% to TPOT at every concurrency (54.7 → 57.4 ms
+**Our result.** KV cache: 40,880 tokens in Step 4 (4096 context), 31,280 for a plain server at
+8192 (Step 9), 30,832 with LoRA at 8192. So enabling LoRA costs only ~450 tokens (~25 MB); the
+longer context cost ~9,600 tokens (0.5 GiB), because vLLM's startup profiling reserves more
+activation memory for longer sequences. That smaller cache is why `base` at 32 users fell from
+223.6 tok/s (Step 5) to 194.2: it's the context setting, not LoRA. Applying the adapter added a steady ~5% to TPOT at every concurrency (54.7 → 57.4 ms
 at 1 user, 118.7 → 126.5 ms at 32) and ~11% to TTFT, since prefill runs it on every prompt token.
 The overhead doesn't shrink with batch size: the adapter's work grows with the number of tokens,
 while the base weights are read once per step either way.
@@ -669,8 +671,8 @@ source ~/venvs/serve/bin/activate
 MODE=model MODEL_PATH=models/merged-qwen7b SERVED_NAME=merged ./scripts/serve_vllm.sh   # in tmux
 ```
 
-The startup log should show the same KV cache as Step 4 (about 40,880 tokens), because no memory
-is reserved for adapters. Then:
+The startup log shows about 31,280 KV-cache tokens: the same as the LoRA server (30,832) plus the
+~450 tokens LoRA reserved. Step 4's 40,880 was at `MAX_MODEL_LEN=4096`. Then, in the serve venv:
 
 ```bash
 python scripts/benchmark.py --model merged --label merged --concurrency 1,4,8,16,32 --max-tokens 128
@@ -688,8 +690,8 @@ python scripts/report.py
 ```
 
 **Look for:**
-* **Speed:** `merged` should match `base` (TPOT ~54.7 ms at 1 user, ~224 tok/s at 32), not
-  `lora-r16` (57.4 ms, 183 tok/s). The adapter's ~5% overhead and the smaller KV cache are gone.
+* **Speed:** `merged` should match `base-on-lora-server` (same 8192 context: TPOT ~54.7 ms at 1
+  user, ~194 tok/s at 32), not `lora-r16` (57.4 ms, 183 tok/s). The adapter's ~5% is gone.
 * **Quality:** field accuracy and exact match within noise of `lora-r16` (97.9%, 88.5%).
   `compare_extraction.py` shows how many answers changed and whether the split is significant.
 * **Perplexity:** close to `lora-r16`'s 1.0088. A slightly higher value is the bf16 rounding above.
