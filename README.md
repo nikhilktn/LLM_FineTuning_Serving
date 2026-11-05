@@ -1189,7 +1189,7 @@ The token lives in `~/.cache/huggingface/token`, readable only by you.
 **2. Check the model cards first:**
 
 ```bash
-U=$(hf auth whoami | sed -nE 's/.*user: *//p')       # your Hub username
+U=$(hf auth whoami | sed -nE 's/.*user: *//p') && echo "U=$U"   # your Hub username; must not be empty
 python scripts/publish_hub.py outputs/qwen7b-lora/final --label lora-r16 --repo $U/qwen2.5-7b-10k-extract-lora --dry-run
 python scripts/publish_hub.py models/merged-qwen7b-w8a8 --label w8a8     --repo $U/qwen2.5-7b-10k-extract-w8a8 --dry-run
 less results/cards/qwen2.5-7b-10k-extract-lora.md results/cards/qwen2.5-7b-10k-extract-w8a8.md
@@ -1217,10 +1217,11 @@ and check the answers match. The service holds the GPU, so stop it for the test:
 
 ```bash
 sudo systemctl stop vllm
-source ~/venvs/serve/bin/activate
 tmux new -s hubtest
+# a new tmux shell doesn't inherit variables: set U again here, and in the second shell
+cd ~/LLM_FineTuning_Serving && source ~/venvs/serve/bin/activate && U=$(hf auth whoami | sed -nE 's/.*user: *//p') && echo "U=$U"
 MODE=model MODEL_PATH=$U/qwen2.5-7b-10k-extract-w8a8 SERVED_NAME=hub bash scripts/serve_vllm.sh   # downloads 8.7 GB first
-# second shell:
+# second shell (same cd/source/U line first):
 python scripts/eval_extraction.py --model hub --label hub-w8a8
 python scripts/compare_extraction.py results/extract_w8a8.json results/extract_hub-w8a8.json
 # Ctrl-C the server, then:
