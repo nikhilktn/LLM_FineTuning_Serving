@@ -1,0 +1,55 @@
+{
+  "label": "merged-warm",
+  "model": "merged-warm",
+  "max_tokens": 128,
+  "levels": [
+    {
+      "concurrency": 1,
+      "ttft_p50_ms": 296.4,
+      "ttft_p95_ms": 465.1,
+      "tpot_p50_ms": 54.63,
+      "output_tok_per_s": 17.6,
+      "requests_per_s": 0.14
+    },
+    {
+      "concurrency": 4,
+      "ttft_p50_ms": 788.2,
+      "ttft_p95_ms": 1126.0,
+      "tpot_p50_ms": 58.81,
+      "output_tok_per_s": 61.6,
+      "requests_per_s": 0.48
+    },
+    {
+      "concurrency": 8,
+      "ttft_p50_ms": 1415.1,
+      "ttft_p95_ms": 2243.7,
+      "tpot_p50_ms": 64.17,
+      "output_tok_per_s": 106.7,
+      "requests_per_s": 0.83
+    },
+    {
+      "concurrency": 16,
+      "ttft_p50_ms": 1638.5,
+      "ttft_p95_ms": 5017.0,
+      "tpot_p50_ms": 80.32,
+      "output_tok_per_s": 167.9,
+      "requests_per_s": 1.31
+    },
+    {
+      "concurrency": 32,
+      "ttft_p50_ms": 3054.8,
+      "ttft_p95_ms": 9614.0,
+      "tpot_p50_ms": 118.91,
+      "output_tok_per_s": 221.0,
+      "requests_per_s": 1.73
+    },
+    {
+      "concurrency": 64,
+      "ttft_p50_ms": 9639.9,
+      "ttft_p95_ms": 26976.4,
+      "tpot_p50_ms": 144.61,
+      "output_tok_per_s": 232.9,
+      "requests_per_s": 1.82
+    }
+  ]
+}

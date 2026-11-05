@@ -39,6 +39,7 @@ real numbers from your own hardware, which teach far more than any blog post.
 | 11 | Evaluate and benchmark quantized models | The size / speed / quality trade-off |
 | **E. Production** | | |
 | 12 | Deploy the chosen model | systemd, API keys, exposing it safely |
+| 13 | Publish to the Hugging Face Hub | Model cards, repos, sharing adapters vs full models |
 | ★ | Experiments | Going deeper on your own |
 
 Plan on roughly a weekend for A–C and another for D–E. Training time depends on your GPU and
@@ -945,6 +946,47 @@ About 12 minutes per model. `merged-warm` is needed because Step 9's benchmark r
 
 **Choose your production model:** the smallest or fastest one whose quality you're happy with.
 
+### Our result
+
+All runs warm-started (`merged-warm` is `merged` re-benchmarked under the same conditions):
+
+| | merged | fp8 | w8a8 | w4a16 |
+|---|---|---|---|---|
+| Weights on disk | 15.24 GB | 8.72 GB | 8.72 GB | **5.56 GB** |
+| Weights in GPU (log) | 14.29 GiB | 8.18 GiB | 8.18 GiB | 5.27 GiB |
+| KV cache, warm (cold) | 40,880 (–) | 153,040 (143,312) | 151,760 (142,160) | **207,936** (198,480) |
+| Max concurrency at 8,192 | 5.0× | 18.7× | 18.5× | **25.4×** |
+| Loss = ln(perplexity) | 0.00707 | 0.00757 | **0.00707** | 0.00747 |
+| Field acc / exact / halluc. | 97.9 / 88.5 / 8.9% | 97.9 / 88.1 / 8.6% | 97.8 / 87.5 / 9.9% | 97.9 / 87.5 / 8.2% |
+| Identical answers to merged | – | 283 / 287 | 280 / 287 | 279 / 287 |
+| Only merged right / only quantized right (sign test p) | – | 2 / 1 (1.00) | 3 / 0 (0.25) | 4 / 1 (0.38) |
+| Sign errors (merged: 3) | – | 5 | 6 | 6 |
+| TPOT @1 | 54.63 ms | 32.79 ms | 32.05 ms | **18.64 ms** |
+| TTFT p50 @1 | 296 ms | 215 ms | **206 ms** | 321 ms |
+| tok/s @1 / @16 / @64 | 17.6 / 168 / 233 | 29.2 / 257 / 416 | 29.9 / **269 / 442** | **47.4** / 251 / 318 |
+
+**What it shows:**
+* **Quality: no measurable loss from any scheme.** No sign test is close to significant. W8A8 has
+  exactly the merged model's loss; the data-free FP8 is the worst on perplexity (+7%), worse even
+  than INT4, which GPTQ calibrated on our data. Pooled over the three, 9 tables were right only in
+  merged vs 2 only quantized (p = 0.07): a hint of a small, consistent cost, but not proof. The
+  answers that flipped are mostly `income_tax` signs (HPQ, TT, AMZN): the sign is a close call
+  between two likely tokens, and a small numerical change tips it.
+* **One user: bytes decide.** TPOT follows the bytes read per token. The embedding table (1.09 GB)
+  is a lookup, so a decode step reads everything else: 14.1 GB for merged (259 GB/s achieved, 92% of
+  the 280 GB/s peak), 7.6 GB for 8-bit (~235 GB/s), 4.5 GB for INT4 (240 GB/s). INT4 is 2.9× merged.
+* **Many users: compute and KV cache decide.** INT4's lead is gone by 16 users and it's last of the
+  three at 64. Its kernel unpacks to bf16 and uses bf16 math, while FP8/INT8 run on 8-bit tensor
+  cores (2× the FLOPs). The same explains prefill (TTFT): INT8 is fastest, INT4 slowest.
+* **The KV cache matters at load:** `merged` warm vs cold (Step 9) went from 194 to 221 tok/s at 32
+  users with nothing changed but 10K more KV tokens. The quantized models have 3.7–5× merged's cache.
+  Cold starts again cost ~10K tokens (0.5 GiB) on every model, confirming Step 4.
+* **The `merged` server was already compiled** (Step 9, Phase C), so both its starts were warm.
+
+**Choice:** `w8a8` for this workload (batch extraction of many filings): the best throughput and
+prefill, the same loss as merged, 57% of the size. `w4a16` is the pick for one user at a time
+(2.9× faster decode, 36% of the size, the most KV cache) or a smaller GPU.
+
 ---
 
 # E. Production
@@ -965,6 +1007,64 @@ sudo journalctl -u vllm -f
 stays out of `ps`), never expose port 8000 directly to the internet, and put
 it behind nginx or Caddy with TLS, or restrict access with the firewall:
 `sudo ufw allow from <your-ip> to any port 8000`.
+
+## Step 13: Publish to the Hugging Face Hub
+
+**Learn:** what to share, model cards, and why the Hub stores models but doesn't serve them for free.
+
+Storing models on the Hub is free; *serving* them isn't (Inference Endpoints are paid per hour, and
+free ZeroGPU Spaces get a few GPU-minutes a day). So the Hub is the place to keep and share the
+weights, and your own server is where they run. What to publish:
+
+| What | Size | How someone uses it |
+|---|---|---|
+| The LoRA adapter | 78 MB | `vllm serve Qwen/Qwen2.5-7B-Instruct --enable-lora --lora-modules extract=<you>/<repo>` |
+| The chosen quantized model (`w8a8`) | 8.7 GB | `vllm serve <you>/<repo>`; the `quantization_config` comes with it |
+
+The adapter is the efficient way to share a fine-tune: 0.5% of the model's size, on top of a base
+everyone can download. Qwen2.5-7B-Instruct is Apache-2.0, so derivatives can be shared; the training
+data comes from public SEC filings.
+
+**1. A token with write access.** The one from Step 2 is probably read-only. Create a token with
+*Write* role (or fine-grained, with write access to your repos) at
+https://huggingface.co/settings/tokens, then on the server:
+
+```bash
+source ~/venvs/train/bin/activate      # any venv with huggingface_hub
+hf auth login                          # paste the write token
+hf auth whoami
+```
+
+**2. Check the model card first.** `publish_hub.py` writes a model card from this repo's results
+(training setup, accuracy vs base, speed, prompt format, limitations):
+
+```bash
+python scripts/publish_hub.py outputs/qwen7b-lora/final --label lora-r16 --repo <you>/qwen2.5-7b-10k-extract-lora --dry-run
+python scripts/publish_hub.py models/merged-qwen7b-w8a8 --label w8a8 --repo <you>/qwen2.5-7b-10k-extract-w8a8 --dry-run
+less results/cards/*.md
+```
+
+**3. Upload.** Repos are created **private**; add `--public` when you're happy with them:
+
+```bash
+python scripts/publish_hub.py outputs/qwen7b-lora/final --label lora-r16 --repo <you>/qwen2.5-7b-10k-extract-lora
+python scripts/publish_hub.py models/merged-qwen7b-w8a8 --label w8a8 --repo <you>/qwen2.5-7b-10k-extract-w8a8
+```
+
+The adapter uploads in seconds, the 8.7 GB model in minutes (the Hub client uploads large files
+in parallel chunks). `training_args.bin`, a pickle nobody needs, is left out, and PEFT's
+auto-generated README is replaced by our card. Re-running updates the repo; every upload is a
+commit, so older versions stay downloadable.
+
+**4. Test it like a stranger would.** Stop your server, then serve from the Hub instead of the local
+directory (`hf auth login` is still needed while the repo is private):
+
+```bash
+source ~/venvs/serve/bin/activate
+MODE=model MODEL_PATH=<you>/qwen2.5-7b-10k-extract-w8a8 SERVED_NAME=hub bash scripts/serve_vllm.sh   # in tmux
+python scripts/eval_extraction.py --model hub --label hub-w8a8
+python scripts/compare_extraction.py results/extract_w8a8.json results/extract_hub-w8a8.json   # expect 287 identical
+```
 
 ---
 
@@ -1013,7 +1113,7 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
 scripts/       check_env, download_model, prepare_data, build_10k_dataset, train_lora, plot_training,
                test_adapter, eval_extraction, rescore_extraction, compare_extraction,
                merge_lora, quantize, inspect_quant, evaluate, benchmark, report, serve_vllm, chat_client,
-               step11
+               step11, publish_hub
 deploy/        vllm.service
 models/        base, merged and quantized models            (git-ignored)
 outputs/       LoRA checkpoints, adapters, TensorBoard logs (git-ignored)

@@ -224,3 +224,6 @@ models/
 outputs/
 data/
 CLAUDE.md
+
+# generated model cards (scripts/publish_hub.py)
+results/cards/
