@@ -1055,6 +1055,22 @@ Expect 287 (or very nearly) identical answers, TPOT ~32 ms at 1 user and ~440 to
 greedy decoding isn't bit-exact (batch composition changes the order of floating-point sums), so
 one or two answers may differ.
 
+**Our result:** the service came up in 24 s (warm compile cache) with `GPU KV cache size: 140,432
+tokens` (7.5 GiB ÷ 56 KiB per token, the same on every start).
+
+| | Step 11 `w8a8` | deployed |
+|---|---|---|
+| Exact match / field acc / halluc. | 87.5 / 97.8 / 9.9% | 87.1 / 97.8 / 9.5% |
+| Identical answers | | 285 / 287 (sign test p = 1.00) |
+| TPOT @1 | 32.05 ms | 32.03 ms |
+| tok/s @16 / @64 | 269 / 442 | 268 / 418 |
+
+The two differing answers go one each way: LHX's `fiscal_period_end` broke (a 52/53-week fiscal
+year, so "12-31" vs "01-03" is a near-tie) and ALL's hallucinated `cost_of_revenue` was fixed.
+Symmetric flips are batching noise, not a model change, and the same goes for some of Step 11's
+"quantization" flips. The @64 figure isn't directly comparable: with levels 1,16,64 instead of
+1,4,8,16,32,64, the 64-user level gets a different slice of prompts.
+
 ### 12.5 Resilience tests (sudo)
 
 ```bash
