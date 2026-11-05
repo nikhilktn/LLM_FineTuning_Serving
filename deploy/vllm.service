@@ -1,25 +1,43 @@
-# Step 12: systemd unit. Edit User, WorkingDirectory, paths and the API key, then:
+# Step 12: vLLM as a systemd service. Install with:
 #   sudo cp deploy/vllm.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now vllm
+# Change settings without editing this file: sudo systemctl edit vllm  (writes an override)
 [Unit]
-Description=vLLM OpenAI-compatible server
+Description=vLLM OpenAI-compatible server (10-K extraction model)
 After=network-online.target
 Wants=network-online.target
+# Stop retrying after 5 failed starts in 10 minutes (e.g. GPU taken by another job)
+StartLimitIntervalSec=600
+StartLimitBurst=5
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/LLM_FineTuning_Serving
-Environment=PATH=/home/ubuntu/venvs/serve/bin:/usr/local/bin:/usr/bin:/bin
-Environment=HF_HOME=/home/ubuntu/.cache/huggingface
+User=admin
+WorkingDirectory=/home/admin/LLM_FineTuning_Serving
+Environment=PATH=/home/admin/venvs/serve/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HF_HOME=/home/admin/.cache/huggingface
 Environment=MODE=model
-Environment=MODEL_PATH=models/merged-qwen7b-w4a16
-Environment=SERVED_NAME=my-model
-# The API key is read from ~/.vllm_api_key of the User above (chmod 600).
-# serve_vllm.sh listens on 127.0.0.1; set HOST=0.0.0.0 only behind a firewall or reverse proxy.
-ExecStart=/bin/bash scripts/serve_vllm.sh
+Environment=MODEL_PATH=models/merged-qwen7b-w8a8
+Environment=SERVED_NAME=fin-extract
+Environment=MAX_MODEL_LEN=8192
+# Don't send usage statistics from a production server
+Environment=VLLM_NO_USAGE_STATS=1
+Environment=DO_NOT_TRACK=1
+# The API key is read from /home/admin/.vllm_api_key (chmod 600).
+# serve_vllm.sh listens on 127.0.0.1 only; reach it via SSH tunnel or the reverse proxy (deploy/Caddyfile).
+# Fail fast (and retry) if the GPU driver isn't up yet after a reboot.
+ExecStartPre=/usr/bin/nvidia-smi -L
+# A fixed KV cache (7.5 GiB, ~140K tokens) instead of "whatever is left after profiling", so
+# capacity is the same on every start, cold or warm compile cache (Step 4).
+ExecStart=/bin/bash scripts/serve_vllm.sh --kv-cache-memory-bytes 8053063680
+# Ctrl-C equivalent: lets vLLM finish shutting down the engine and free the GPU
+KillSignal=SIGINT
+TimeoutStopSec=60
 Restart=on-failure
-RestartSec=10
+RestartSec=15
 LimitNOFILE=65535
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
 
 [Install]
 WantedBy=multi-user.target

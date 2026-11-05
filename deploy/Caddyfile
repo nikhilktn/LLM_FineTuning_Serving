@@ -1,0 +1,25 @@
+# Step 12 (optional): public HTTPS in front of vLLM. Needs a DNS name pointing at the server.
+#   sudo apt install caddy && sudo cp deploy/Caddyfile /etc/caddy/Caddyfile   (replace the name below)
+#   sudo systemctl reload caddy
+# Caddy gets and renews the TLS certificate itself (Let's Encrypt), on ports 80 and 443.
+api.example.com {
+	# Only the OpenAI-compatible API is public. /metrics, /health, the docs and the
+	# LoRA load/unload endpoints stay reachable from the server only.
+	handle /v1/* {
+		reverse_proxy 127.0.0.1:8000 {
+			# Generations stream for up to a minute; don't cut them off
+			transport http {
+				read_timeout 300s
+			}
+		}
+	}
+	handle {
+		respond 404
+	}
+	request_body {
+		max_size 1MB
+	}
+	log {
+		output file /var/log/caddy/vllm-access.log
+	}
+}

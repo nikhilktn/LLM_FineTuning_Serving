@@ -355,7 +355,7 @@ curl -s localhost:8000/v1/models -H "Authorization: Bearer $VLLM_API_KEY" | pyth
 curl -s localhost:8000/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer $VLLM_API_KEY" \
   -d '{"model": "base", "messages": [{"role": "user", "content": "What is a KV cache?"}], "max_tokens": 200}' | python -m json.tool
 python scripts/chat_client.py --model base --stream
-curl -s localhost:8000/metrics | grep -E "^vllm:(num_requests|gpu_cache_usage)"   # Prometheus metrics
+curl -s localhost:8000/metrics | grep -E "^vllm:(num_requests|kv_cache_usage|gpu_cache_usage)"   # Prometheus metrics
 ```
 
 **Try:** restart with `MAX_MODEL_LEN=32768` and then `GPU_UTIL=0.7`, and watch how
@@ -993,20 +993,137 @@ prefill, the same loss as merged, 57% of the size. `w4a16` is the pick for one u
 
 ## Step 12: Deploy the chosen model
 
-**Learn:** turning a manual process into a service.
+**Learn:** turning a manual process into a service: start on boot, restart on crash, logs, fixed
+capacity, access control, and how to operate it afterwards.
 
-Edit `deploy/vllm.service` (user, paths, `MODEL_PATH`, API key), then:
+We deploy `w8a8` (Step 11: best throughput, no measurable quality loss) as the systemd service in
+`deploy/vllm.service`. What it adds over `serve_vllm.sh` in tmux:
+
+| Setting | Why |
+|---|---|
+| `enable` + `WantedBy=multi-user.target` | starts on boot, no SSH session needed |
+| `Restart=on-failure`, `StartLimitBurst=5` | restarts after a crash, but gives up if it keeps failing |
+| `ExecStartPre=nvidia-smi -L` | fails (and retries) if the GPU driver isn't up yet after a reboot |
+| `--kv-cache-memory-bytes 8053063680` (7.5 GiB) | the same ~140K-token KV cache on every start, cold or warm (Step 4) |
+| `KillSignal=SIGINT`, `TimeoutStopSec=60` | a clean shutdown that frees the GPU |
+| `VLLM_NO_USAGE_STATS=1` | no usage statistics sent from a production server |
+| `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=full` | limits what a compromised process can do |
+| logs go to journald | `journalctl -u vllm`, rotated automatically |
+
+### 12.1 Prepare (no sudo)
 
 ```bash
-sudo cp deploy/vllm.service /etc/systemd/system/vllm.service
-sudo systemctl daemon-reload && sudo systemctl enable --now vllm
-sudo journalctl -u vllm -f
+cd ~/LLM_FineTuning_Serving
+git checkout -- results/ && git clean -f results/ && git pull
+tmux kill-session -t step11 2>/dev/null; nvidia-smi --query-gpu=memory.used --format=csv   # ~0 MiB
+ls models/merged-qwen7b-w8a8/config.json ~/.vllm_api_key                                 # both exist
 ```
 
-**Security:** always require an API key (passed via the `VLLM_API_KEY` environment variable so it
-stays out of `ps`), never expose port 8000 directly to the internet, and put
-it behind nginx or Caddy with TLS, or restrict access with the firewall:
-`sudo ufw allow from <your-ip> to any port 8000`.
+### 12.2 Install and start (sudo)
+
+```bash
+sudo cp deploy/vllm.service /etc/systemd/system/vllm.service && sudo chmod 644 /etc/systemd/system/vllm.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now vllm
+journalctl -u vllm -f          # Ctrl-C stops following, not the service
+```
+
+Wait for `Application startup complete` (about a minute). In the log, check:
+`Model loading took 8.18 GiB`, `GPU KV cache size: ~140,000 tokens`, and that there's no
+`Traceback`. `systemctl status vllm` should say `active (running)`.
+
+### 12.3 Smoke test (serve venv)
+
+```bash
+source ~/venvs/serve/bin/activate
+K="Authorization: Bearer $(cat ~/.vllm_api_key)"
+curl -s localhost:8000/health -o /dev/null -w "health: %{http_code}\n"      # 200
+curl -s localhost:8000/v1/models -H "$K" | python -m json.tool | grep '"id"'  # "fin-extract"
+curl -s localhost:8000/v1/models -o /dev/null -w "no key: %{http_code}\n"    # 401
+python scripts/chat_client.py --model fin-extract --prompt "What is EBITDA? One sentence."
+```
+
+### 12.4 Check the deployed model is the one you measured (serve venv)
+
+```bash
+python scripts/eval_extraction.py --model fin-extract --label deployed
+python scripts/compare_extraction.py results/extract_w8a8.json results/extract_deployed.json
+python scripts/benchmark.py --model fin-extract --label deployed --concurrency 1,16,64 --max-tokens 128 --eval-file data/train.jsonl
+```
+
+Expect 287 (or very nearly) identical answers, TPOT ~32 ms at 1 user and ~440 tok/s at 64. Batched
+greedy decoding isn't bit-exact (batch composition changes the order of floating-point sums), so
+one or two answers may differ.
+
+### 12.5 Resilience tests (sudo)
+
+```bash
+sudo kill -9 "$(systemctl show -p MainPID --value vllm)"   # simulate a crash
+sleep 20; systemctl status vllm --no-pager | head -5         # restarted by systemd
+journalctl -u vllm --since "2 min ago" | grep -iE "main process exited|Started|startup complete"
+```
+
+Optional: `sudo reboot`, reconnect after a minute or two, then rerun the `curl` health check.
+
+### 12.6 Firewall (sudo)
+
+Port 8000 listens on 127.0.0.1 only, so it's not reachable from outside even without a firewall.
+A firewall is the second layer. **Allow SSH before enabling it**, or you lock yourself out
+(Hetzner's web console is the way back in):
+
+```bash
+sudo ufw status verbose
+sudo ufw default deny incoming && sudo ufw default allow outgoing
+sudo ufw allow OpenSSH
+sudo ufw enable
+sudo ufw status numbered
+ss -ltn | grep -E ":22|:8000"            # 0.0.0.0:22, 127.0.0.1:8000
+```
+
+### 12.7 Access from elsewhere: pick one
+
+| Option | Effort | Use when |
+|---|---|---|
+| **A. SSH tunnel** | none | just you: `ssh -N -L 8000:localhost:8000 admin@<server>`, then `http://localhost:8000/v1` |
+| **B. Tailscale** | 5 min | a few people or machines; private network, nothing public: `curl -fsSL https://tailscale.com/install.sh \| sh && sudo tailscale up`, then run with `HOST=<tailscale IP>` |
+| **C. HTTPS with Caddy** | 15 min + a domain | public API: `deploy/Caddyfile` |
+
+For C: point a DNS name (e.g. `api.yourdomain.com`) at the server, then:
+
+```bash
+sudo apt install caddy
+sudo cp deploy/Caddyfile /etc/caddy/Caddyfile && sudo sed -i 's/api.example.com/api.yourdomain.com/' /etc/caddy/Caddyfile
+sudo mkdir -p /var/log/caddy && sudo chown caddy:caddy /var/log/caddy
+sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+sudo ufw allow 80,443/tcp
+curl -s https://api.yourdomain.com/v1/models -H "$K"     # from your laptop
+```
+
+Caddy gets and renews the TLS certificate itself, and only forwards `/v1/*`, so `/metrics`, the docs
+and the adapter-loading endpoints stay private. Everyone shares one API key: vLLM has no per-user
+keys or rate limits. For that, put an API gateway (e.g. LiteLLM) in front.
+
+### 12.8 Monitor
+
+```bash
+curl -s localhost:8000/metrics | grep -E "^vllm:(num_requests_(running|waiting)|kv_cache_usage_perc|gpu_cache_usage_perc|prompt_tokens_total|generation_tokens_total)"
+journalctl -u vllm --since today | grep -E "Engine 000" | tail -3   # throughput, running/waiting, KV usage every 10 s
+nvidia-smi --query-gpu=utilization.gpu,memory.used,power.draw,temperature.gpu --format=csv -l 5
+```
+
+Watch `num_requests_waiting`: above zero for long means the KV cache or compute is saturated.
+These are Prometheus metrics, so Prometheus + Grafana can scrape them for dashboards and alerts.
+
+### 12.9 Operate it
+
+| Task | Command |
+|---|---|
+| Free the GPU (training, quantization) | `sudo systemctl stop vllm`, later `sudo systemctl start vllm` |
+| Serve a different model | `sudo systemctl edit vllm`, add `[Service]` and `Environment=MODEL_PATH=models/merged-qwen7b-w4a16`, then `sudo systemctl restart vllm` |
+| Undo overrides | `sudo systemctl revert vllm && sudo systemctl restart vllm` |
+| Rotate the API key | `openssl rand -hex 24 > ~/.vllm_api_key && sudo systemctl restart vllm` |
+| After `git pull` changes `deploy/vllm.service` | repeat the `cp` + `daemon-reload` + `restart` |
+| Remove the service | `sudo systemctl disable --now vllm && sudo rm /etc/systemd/system/vllm.service && sudo systemctl daemon-reload` |
 
 ## Step 13: Publish to the Hugging Face Hub
 
