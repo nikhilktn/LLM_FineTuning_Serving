@@ -1,0 +1,31 @@
+{
+  "label": "deployed",
+  "model": "fin-extract",
+  "max_tokens": 128,
+  "levels": [
+    {
+      "concurrency": 1,
+      "ttft_p50_ms": 200.6,
+      "ttft_p95_ms": 302.5,
+      "tpot_p50_ms": 32.03,
+      "output_tok_per_s": 29.9,
+      "requests_per_s": 0.23
+    },
+    {
+      "concurrency": 16,
+      "ttft_p50_ms": 1190.5,
+      "ttft_p95_ms": 3037.7,
+      "tpot_p50_ms": 50.28,
+      "output_tok_per_s": 267.5,
+      "requests_per_s": 2.09
+    },
+    {
+      "concurrency": 64,
+      "ttft_p50_ms": 6408.2,
+      "ttft_p95_ms": 12616.3,
+      "tpot_p50_ms": 99.25,
+      "output_tok_per_s": 417.5,
+      "requests_per_s": 3.26
+    }
+  ]
+}
