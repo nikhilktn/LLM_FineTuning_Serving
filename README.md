@@ -327,6 +327,25 @@ A server started *outside* tmux stops when your SSH session closes.
   the memory left for KV cache after the weights, and how many full-length requests fit at
   once. **Write these down.** You'll compare them after quantizing.
 
+**The KV cache size depends on whether vLLM compiled on this start.** vLLM compiles the model
+with `torch.compile` and caches the result under `~/.cache/vllm/torch_compile_cache`, keyed by
+model and settings (including `MAX_MODEL_LEN`). The first start with a new combination compiles
+(`Compiling a graph ... takes X s`), and that compile inflates the memory the startup profile
+measures. Measured on the 7B model with every setting held equal:
+
+| Start | Log line | Peak activation | KV cache |
+|---|---|---|---|
+| Cold (compiles) | `Compiling a graph for compile range (1, 2048)` | 1.45 GiB | 1.67 GiB, 31,280 tokens |
+| Warm (cache hit) | `Directly load AOT compilation from path ...` | 0.94 GiB | 2.18 GiB, 40,880 tokens |
+
+So **restart once and read the second start's numbers**, or pin the cache with
+`--kv-cache-memory=<bytes>` (the log suggests a value). `MAX_MODEL_LEN` doesn't change the KV
+cache: a warm start gives 40,880 tokens at both 4096 and 8192, because the startup profile runs
+one batch of `max_num_batched_tokens` (2048 here), not one maximum-length sequence.
+`MAX_MODEL_LEN` changes only how many full-length requests fit, and whether one fits at all. At
+32768, a cold start failed: one request needs 1.75 GiB of KV cache (32,768 × 56 KiB) and only
+1.67 GiB was left.
+
 Call it from a second shell:
 
 ```bash
@@ -516,8 +535,8 @@ MODE=lora SERVED_NAME=base ADAPTER_NAME=my-lora ADAPTER_PATH=outputs/qwen7b-lora
   ./scripts/serve_vllm.sh
 ```
 
-In the startup log, note the KV-cache size. Compare it with a plain server at the **same
-`MAX_MODEL_LEN`**: the context length changes the KV cache much more than LoRA does (see below).
+In the startup log, note the KV-cache size and whether this start compiled or loaded from the
+compile cache (see Step 4). A cold start leaves about 10K fewer KV-cache tokens.
 
 ### 8.2 One server, three models
 
@@ -543,14 +562,15 @@ python scripts/report.py
 ```
 
 * `base-on-lora-server` vs `lora-r16`: the per-request cost of applying the adapter.
-* `base` (Step 5) vs `base-on-lora-server` is **not** a clean comparison: Step 4/5 ran with
-  `MAX_MODEL_LEN=4096` and this server with 8192.
+* `base` (Step 5) vs `base-on-lora-server` is **not** a clean comparison at high concurrency:
+  the Step 5 server had a bigger KV cache.
 
-**Our result.** KV cache: 40,880 tokens in Step 4 (4096 context), 31,280 for a plain server at
-8192 (Step 9), 30,832 with LoRA at 8192. So enabling LoRA costs only ~450 tokens (~25 MB); the
-longer context cost ~9,600 tokens (0.5 GiB), because vLLM's startup profiling reserves more
-activation memory for longer sequences. That smaller cache is why `base` at 32 users fell from
-223.6 tok/s (Step 5) to 194.2: it's the context setting, not LoRA. Applying the adapter added a steady ~5% to TPOT at every concurrency (54.7 → 57.4 ms
+**Our result.** KV cache: 40,880 tokens in Step 5 (a warm start), 30,832 for this LoRA server (a
+cold start), and 31,280 for the merged server's cold start in Step 9. LoRA itself costs only ~450
+tokens (~25 MB). The other ~10K tokens were the cold compile, not LoRA and not the context
+length (an earlier version of this README blamed each in turn; Step 9's restarts settled it).
+That smaller cache is why `base` at 32 users fell from 223.6 tok/s (Step 5) to 194.2: fewer
+sequences fit in the cache at once. Applying the adapter added a steady ~5% to TPOT at every concurrency (54.7 → 57.4 ms
 at 1 user, 118.7 → 126.5 ms at 32) and ~11% to TTFT, since prefill runs it on every prompt token.
 The overhead doesn't shrink with batch size: the adapter's work grows with the number of tokens,
 while the base weights are read once per step either way.
@@ -675,8 +695,9 @@ source ~/venvs/serve/bin/activate
 MODE=model MODEL_PATH=models/merged-qwen7b SERVED_NAME=merged ./scripts/serve_vllm.sh   # in tmux
 ```
 
-The startup log shows about 31,280 KV-cache tokens: the same as the LoRA server (30,832) plus the
-~450 tokens LoRA reserved. Step 4's 40,880 was at `MAX_MODEL_LEN=4096`. Then, in the serve venv:
+The first start compiles the merged model, so the log shows about 31,280 KV-cache tokens: the LoRA
+server's 30,832 plus the ~450 tokens LoRA reserves. A restart loads the compile cache and gives
+40,880, like Step 5 (see Step 4). Then, in the serve venv:
 
 ```bash
 python scripts/benchmark.py --model merged --label merged --concurrency 1,4,8,16,32 --max-tokens 128
@@ -696,12 +717,30 @@ python scripts/evaluate.py --model models/merged-qwen7b --label merged
 python scripts/report.py
 ```
 
-**Look for:**
-* **Speed:** `merged` should match `base-on-lora-server` (same 8192 context: TPOT ~54.7 ms at 1
-  user, ~194 tok/s at 32), not `lora-r16` (57.4 ms, 183 tok/s). The adapter's ~5% is gone.
-* **Quality:** field accuracy and exact match within noise of `lora-r16` (97.9%, 88.5%).
-  `compare_extraction.py` shows how many answers changed and whether the split is significant.
-* **Perplexity:** close to `lora-r16`'s 1.0088. A slightly higher value is the bf16 rounding above.
+**Our result:**
+
+| | lora-r16 (adapter) | merged |
+|---|---|---|
+| TPOT @1 | 57.39 ms | **54.63 ms** (base on the same server: 54.68) |
+| tok/s @32 | 182.6 | **194.4** (base on the same server: 194.2) |
+| TTFT p50 @1 | 337.4 ms | **304.7 ms** |
+| Field accuracy / exact match / hallucination | 97.9% / 88.5% / 8.9% | 97.9% / 88.5% / 8.9% |
+| Answers identical to the adapter's | | **287 of 287** |
+
+* **Speed:** the merged model runs at exactly base-model speed; the adapter's ~5% TPOT and ~11%
+  TTFT are gone. Both servers had a cold-start KV cache (~31K tokens), so @32 is comparable.
+* **Quality:** not one answer changed under greedy decoding. The bf16 rounding (20–40% error in
+  the stored update) shifts logits by too little to change which token wins. This is stronger
+  than the "within noise" prediction.
+* **Perplexity:** 1.0071, but it isn't comparable with `lora-r16`'s 1.0088: that was measured
+  before the labels were fixed (20,277 scored tokens vs 20,390 now). To compare, re-run
+  `evaluate.py` for `base` and `lora-r16` on the current data.
+* **General ability:** code, arithmetic and a haiku came out as good as base; the code is
+  token-for-token the same. Hindi translation is wrong in both (`संग्राम` means "battle"), a
+  weakness of the base model, not forgetting. Fine-tuning on 2.6K extraction examples didn't
+  leak the JSON format into general chat.
+
+We keep the bf16 merge, so the fp32 fallback below isn't needed.
 
 **Fallback if quality drops:** merge in fp32 (`dtype=torch.float32` in `merge_lora.py`) and save
 fp32 (30 GB). Served with `--dtype bfloat16` it rounds the same way, so fp32 only helps as the
@@ -749,7 +788,7 @@ source ~/venvs/serve/bin/activate
 M=models/merged-qwen7b-w4a16; L=w4a16          # change per model
 
 python scripts/evaluate.py --model $M --label $L                # server stopped
-MODE=model MODEL_PATH=$M SERVED_NAME=$L bash scripts/serve_vllm.sh   # in tmux; note the KV-cache log lines
+MODE=model MODEL_PATH=$M SERVED_NAME=$L bash scripts/serve_vllm.sh   # in tmux; restart once (Step 4), then note the KV-cache log lines
 python scripts/benchmark.py --model $L --label $L                # second shell
 # stop the server, move on to the next model
 ```
