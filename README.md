@@ -893,32 +893,54 @@ quantized layer's outputs on to the next.
 
 **Learn:** the trade-off, measured on your own hardware.
 
-For each of `merged`, `merged-qwen7b-fp8`, `merged-qwen7b-w8a8` and `merged-qwen7b-w4a16`:
+`scripts/step11.sh` runs the whole measurement for one model, in the serve venv with the GPU free:
+
+1. `evaluate.py`: perplexity (offline vLLM).
+2. Starts the server, stops it, starts it again. The second start is warm (compile cache, Step 4),
+   so its KV-cache numbers are comparable across models. It prints those log lines.
+3. `benchmark.py` at concurrency 1–64, on training prompts: 6 levels × 64 requests is more than the
+   287 eval prompts, and reused prompts would hit the prefix cache.
+4. `eval_extraction.py`, then `compare_extraction.py` against `merged`.
+5. One general prompt, then it stops the server.
 
 ```bash
-source ~/venvs/serve/bin/activate
-M=models/merged-qwen7b-w4a16; L=w4a16          # change per model
-
-python scripts/evaluate.py --model $M --label $L                # server stopped
-MODE=model MODEL_PATH=$M SERVED_NAME=$L bash scripts/serve_vllm.sh   # in tmux; restart once (Step 4), then note the KV-cache log lines
-python scripts/benchmark.py --model $L --label $L                # second shell
-# stop the server, move on to the next model
-```
-
-Then compare everything:
-
-```bash
+tmux new -s step11
+cd ~/LLM_FineTuning_Serving && source ~/venvs/serve/bin/activate
+# merged again, warm and with the same prompts and levels; its quality is already measured
+SKIP_PPL=1 SKIP_EXTRACT=1 bash scripts/step11.sh models/merged-qwen7b merged-warm 2>&1 | tee ~/step11_merged.log
+for q in fp8 w8a8 w4a16; do
+  bash scripts/step11.sh models/merged-qwen7b-$q $q 2>&1 | tee ~/step11_$q.log
+done
 python scripts/report.py
 ```
 
-**How to read the table:**
+About 12 minutes per model. `merged-warm` is needed because Step 9's benchmark ran on a cold start
+(31,280 tokens of KV cache) with the eval prompts.
+
+**Predictions:**
+
+| | merged | fp8 | w8a8 | w4a16 | Why |
+|---|---|---|---|---|---|
+| Weights (GiB in the log) | 14.3 | ~8.2 | ~8.2 | ~5.3 | Step 10 |
+| KV cache, warm | 40,880 | ~150K | ~150K | ~200K | the freed weight memory goes to KV (56 KiB per token) |
+| Max concurrency at 8,192 | 5× | ~18× | ~18× | ~25× | KV ÷ 8,192 |
+| TPOT @1 | 54.6 ms | ~33 ms | ~33 ms | ~25 ms | memory-bound: bytes ÷ 280 GB/s (ideal 31 / 31 / 20 ms) |
+| tok/s @64 | lowest | highest | highest | below 8-bit | compute-bound: 8-bit tensor cores; INT4 dequantizes to bf16 math |
+| Loss (ln perplexity) | 0.0071 | ≤ 0.008 | ≤ 0.008 | 0.009–0.012 | INT4 has the largest GPTQ errors (Step 10) |
+| Answers identical to merged | | ≥ 270/287 | ≥ 270/287 | 250–275 | flips land in the hardest fields |
+
+**How to read the results:**
 * **Size:** about 57% of bf16 for FP8/INT8 and 36% for INT4, not ½ and ¼, because the 2.2 GB of
   embeddings and `lm_head` stay 16-bit (Step 10).
-* **Perplexity:** 8-bit should be within about 1% of `merged`. INT4 typically loses a bit more.
-  If it's much worse, try more calibration samples (`--num-calib 512`).
-* **Concurrency 1 (TPOT):** memory-bound, so INT4 should be fastest since it reads the fewest bytes per token.
-* **Concurrency 32 (throughput):** compute-bound, so W8A8 or FP8 often wins.
-* **KV cache (from the logs):** smaller weights leave more room for cache, so "Maximum concurrency" goes up.
+* **Perplexity:** with values this close to 1, compare `ln(perplexity)`, the average loss per answer
+  token: merged is 0.0071 nats. If INT4 is much worse, try more calibration samples
+  (`--num-calib 512`).
+* **Extraction:** `compare_extraction.py` says how many answers changed and whether the split
+  between "only merged right" and "only quantized right" is significant (sign test). A drop in
+  exact match with p < 0.05 is real damage; otherwise it's noise.
+* **Concurrency 1 (TPOT):** memory-bound, so INT4 should be fastest: it reads the fewest bytes.
+* **Concurrency 32–64 (throughput):** compute-bound, so FP8 or W8A8 should win. The bigger KV cache
+  helps too: `merged` fits only ~22 of our ~1.8K-token requests at once, the 8-bit models all 64.
 * **Read the samples** in `results/eval_<label>.json`. Perplexity doesn't catch everything.
 
 **Choose your production model:** the smallest or fastest one whose quality you're happy with.
@@ -990,7 +1012,8 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
 ```
 scripts/       check_env, download_model, prepare_data, build_10k_dataset, train_lora, plot_training,
                test_adapter, eval_extraction, rescore_extraction, compare_extraction,
-               merge_lora, quantize, inspect_quant, evaluate, benchmark, report, serve_vllm, chat_client
+               merge_lora, quantize, inspect_quant, evaluate, benchmark, report, serve_vllm, chat_client,
+               step11
 deploy/        vllm.service
 models/        base, merged and quantized models            (git-ignored)
 outputs/       LoRA checkpoints, adapters, TensorBoard logs (git-ignored)
