@@ -1081,6 +1081,20 @@ journalctl -u vllm --since "2 min ago" | grep -iE "main process exited|Started|s
 
 Optional: `sudo reboot`, reconnect after a minute or two, then rerun the `curl` health check.
 
+**Our result** (from `journalctl -u vllm`):
+
+| Event | Time | What the log shows |
+|---|---|---|
+| `kill -9` of the API server | 17:26:54 | systemd sends `SIGINT` to the orphaned engine process; its `FileNotFoundError` traceback is the lost IPC socket to the dead parent (expected) |
+| restarted by systemd | 17:27:35 | ready 41 s after the crash (`RestartSec=15` + ~25 s startup), KV 140,432 tokens |
+| `sudo reboot` | 17:27:52 | clean `SIGINT` shutdown: `Shutting down`, `Application shutdown complete` |
+| boot → ready | 17:29:09 → 17:29:54 | serving 45 s after boot with nobody logged in, KV 140,432 tokens |
+
+The KV cache was the same on all three starts, which is what `--kv-cache-memory-bytes` is for.
+`NRestarts` shows 0 afterwards because a reboot resets the counter. The systemd lines themselves
+("Main process exited", "Scheduled restart") are visible only to root or the `systemd-journal`
+group: `sudo usermod -aG systemd-journal admin` lets you read them without sudo.
+
 ### 12.6 Firewall (sudo)
 
 Port 8000 listens on 127.0.0.1 only, so it's not reachable from outside even without a firewall.
