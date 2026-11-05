@@ -1172,46 +1172,73 @@ The adapter is the efficient way to share a fine-tune: 0.5% of the model's size,
 everyone can download. Qwen2.5-7B-Instruct is Apache-2.0, so derivatives can be shared; the training
 data comes from public SEC filings.
 
-**1. A token with write access.** The one from Step 2 is probably read-only. Create a token with
-*Write* role (or fine-grained, with write access to your repos) at
-https://huggingface.co/settings/tokens, then on the server:
+**1. Log in with write access** (train venv; publishing doesn't use the GPU, so the service keeps running):
 
 ```bash
-source ~/venvs/train/bin/activate      # any venv with huggingface_hub
-hf auth login                          # paste the write token
-hf auth whoami
+cd ~/LLM_FineTuning_Serving && source ~/venvs/train/bin/activate
+hf auth whoami          # who you're logged in as
+hf auth list            # stored tokens (masked)
 ```
 
-**2. Check the model card first.** `publish_hub.py` writes a model card from this repo's results
-(training setup, accuracy vs base, speed, prompt format, limitations):
+Either log in from the browser (`hf auth login`, then open the link; the token expires after a
+month) or create a token at https://huggingface.co/settings/tokens with the **Write** role (or
+fine-grained: "Write access to contents/settings of all repos under your personal namespace") and
+paste it into `hf auth login`. A read-only token fails at the first step of the upload with 403.
+The token lives in `~/.cache/huggingface/token`, readable only by you.
+
+**2. Check the model cards first:**
 
 ```bash
-python scripts/publish_hub.py outputs/qwen7b-lora/final --label lora-r16 --repo <you>/qwen2.5-7b-10k-extract-lora --dry-run
-python scripts/publish_hub.py models/merged-qwen7b-w8a8 --label w8a8 --repo <you>/qwen2.5-7b-10k-extract-w8a8 --dry-run
-less results/cards/*.md
+U=$(hf auth whoami | sed -nE 's/.*user: *//p')       # your Hub username
+python scripts/publish_hub.py outputs/qwen7b-lora/final --label lora-r16 --repo $U/qwen2.5-7b-10k-extract-lora --dry-run
+python scripts/publish_hub.py models/merged-qwen7b-w8a8 --label w8a8     --repo $U/qwen2.5-7b-10k-extract-w8a8 --dry-run
+less results/cards/qwen2.5-7b-10k-extract-lora.md results/cards/qwen2.5-7b-10k-extract-w8a8.md
 ```
 
-**3. Upload.** Repos are created **private**; add `--public` when you're happy with them:
+The card is built from `results/` (training summary, accuracy against base, speed, the exact
+prompt format per statement type, limitations) plus Hub metadata: `base_model`, license, tags.
+Edit `scripts/publish_hub.py` if you want to change the wording, then re-run the dry run.
+
+**3. Upload (private):**
 
 ```bash
-python scripts/publish_hub.py outputs/qwen7b-lora/final --label lora-r16 --repo <you>/qwen2.5-7b-10k-extract-lora
-python scripts/publish_hub.py models/merged-qwen7b-w8a8 --label w8a8 --repo <you>/qwen2.5-7b-10k-extract-w8a8
+python scripts/publish_hub.py outputs/qwen7b-lora/final --label lora-r16 --repo $U/qwen2.5-7b-10k-extract-lora
+python scripts/publish_hub.py models/merged-qwen7b-w8a8 --label w8a8     --repo $U/qwen2.5-7b-10k-extract-w8a8
 ```
 
-The adapter uploads in seconds, the 8.7 GB model in minutes (the Hub client uploads large files
-in parallel chunks). `training_args.bin`, a pickle nobody needs, is left out, and PEFT's
-auto-generated README is replaced by our card. Re-running updates the repo; every upload is a
-commit, so older versions stay downloadable.
+The adapter takes seconds, the 8.7 GB model a few minutes. Uploads go through Xet storage
+(`hf_xet`), which splits files into chunks and sends only chunks the Hub doesn't have yet, so a
+re-upload of unchanged weights is nearly instant. Every upload is a commit: the repo page's
+"Files and versions" tab shows the history, and old versions stay downloadable by revision.
+`training_args.bin` is left out, and PEFT's auto-generated README is replaced by our card.
 
-**4. Test it like a stranger would.** Stop your server, then serve from the Hub instead of the local
-directory (`hf auth login` is still needed while the repo is private):
+**4. Test it like a stranger would.** Serve the model from the Hub instead of the local directory
+and check the answers match. The service holds the GPU, so stop it for the test:
 
 ```bash
+sudo systemctl stop vllm
 source ~/venvs/serve/bin/activate
-MODE=model MODEL_PATH=<you>/qwen2.5-7b-10k-extract-w8a8 SERVED_NAME=hub bash scripts/serve_vllm.sh   # in tmux
+tmux new -s hubtest
+MODE=model MODEL_PATH=$U/qwen2.5-7b-10k-extract-w8a8 SERVED_NAME=hub bash scripts/serve_vllm.sh   # downloads 8.7 GB first
+# second shell:
 python scripts/eval_extraction.py --model hub --label hub-w8a8
-python scripts/compare_extraction.py results/extract_w8a8.json results/extract_hub-w8a8.json   # expect 287 identical
+python scripts/compare_extraction.py results/extract_w8a8.json results/extract_hub-w8a8.json
+# Ctrl-C the server, then:
+sudo systemctl start vllm
+hf cache rm model/$U/qwen2.5-7b-10k-extract-w8a8   # free the 8.7 GB downloaded copy
 ```
+
+Expect 285–287 identical answers (Step 12: batching noise flips one or two). For the adapter,
+the same test is `MODE=lora ADAPTER_PATH=$U/qwen2.5-7b-10k-extract-lora`: vLLM downloads the
+adapter from the Hub.
+
+**5. Make them public** when you're happy with the cards, from the repo's *Settings* page, or:
+
+```bash
+python -c "from huggingface_hub import HfApi; [HfApi().update_repo_settings(f'$U/qwen2.5-7b-10k-extract-{n}', private=False) for n in ('lora', 'w8a8')]"
+```
+
+Public is a one-way door in practice: once public, anyone can download and re-upload the files.
 
 ---
 
