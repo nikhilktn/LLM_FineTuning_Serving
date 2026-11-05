@@ -664,6 +664,10 @@ EOF
 Expect 339 tensors (the same as the base model), 0 LoRA tensors, bf16, and about 76% of that layer's
 weights changed.
 
+**Our result:** both 15 GB, 4 safetensors shards plus tokenizer files, 339 tensors, 0 LoRA tensors,
+bf16, 76% of `L10 gate_proj` changed. That 76% is the other side of the table above: the 24% left
+unchanged are weights whose update was smaller than half a bf16 step and rounded away.
+
 ### 9.3 Serve it and measure quality
 
 ```bash
@@ -684,7 +688,10 @@ Run the benchmark first, so the prefix cache is empty.
 
 ### 9.4 Perplexity (stop the server first)
 
+`evaluate.py` runs vLLM offline, so it needs the GPU to itself and the serve venv:
+
 ```bash
+source ~/venvs/serve/bin/activate
 python scripts/evaluate.py --model models/merged-qwen7b --label merged
 python scripts/report.py
 ```
