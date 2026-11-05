@@ -966,7 +966,8 @@ All runs warm-started (`merged-warm` is `merged` re-benchmarked under the same c
 | tok/s @1 / @16 / @64 | 17.6 / 168 / 233 | 29.2 / 257 / 416 | 29.9 / **269 / 442** | **47.4** / 251 / 318 |
 
 **What it shows:**
-* **Quality: no measurable loss from any scheme.** No sign test is close to significant. W8A8 has
+* **Quality: no measurable loss from any scheme** (and see Step 13's noise floor: the same model
+  served twice agrees on only 281–285 answers, so 279–283 is within run-to-run variation). No sign test is close to significant. W8A8 has
   exactly the merged model's loss; the data-free FP8 is the worst on perplexity (+7%), worse even
   than INT4, which GPTQ calibrated on our data. Pooled over the three, 9 tables were right only in
   merged vs 2 only quantized (p = 0.07): a hint of a small, consistent cost, but not proof. The
@@ -1232,6 +1233,20 @@ hf cache rm model/$U/qwen2.5-7b-10k-extract-w8a8   # free the 8.7 GB downloaded 
 Expect 285–287 identical answers (Step 12: batching noise flips one or two). For the adapter,
 the same test is `MODE=lora ADAPTER_PATH=$U/qwen2.5-7b-10k-extract-lora`: vLLM downloads the
 adapter from the Hub.
+
+**Our result:** both repos uploaded privately (adapter 80.8 MB + tokenizer; w8a8 one 8.7 GB
+`model.safetensors` + `config.json` with the `quantization_config` + llm-compressor's `recipe.yaml`).
+The Hub copy is byte-identical to the local one (same SHA-256), and served from the Hub it scored
+97.7% / 87.1% / 9.9%, with 281 of 287 answers identical to Step 11's `w8a8` run (p = 1.00).
+
+**The noise floor.** Three runs of exactly the same bytes (`w8a8` in Step 11, `deployed`, `hub-w8a8`)
+agree on only 281–285 of 287 answers with each other: with greedy decoding, the batch a request
+lands in and the server settings (KV size, compile cache) still change the floating-point sums
+slightly, and near-ties flip. Across all 7 runs of this fine-tune (merged, adapter, fp8, w8a8,
+w4a16, deployed, hub), 268 tables never change and the same 19 fragile ones account for every
+difference: mostly `income_tax` signs, `eps` on loss years, and NCI-related totals. The quantized
+models' 279–283 identical answers against `merged` (Step 11) are inside this noise floor, so the
+quantization effect can't be told apart from serving noise.
 
 **5. Make them public** when you're happy with the cards, from the repo's *Settings* page, or:
 
