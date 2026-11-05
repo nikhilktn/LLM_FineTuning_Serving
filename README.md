@@ -755,31 +755,100 @@ input to quantization, where GPTQ sees the exact merged weights.
 **Learn:** post-training quantization, calibration, and the difference between weight-only and
 weight+activation quantization.
 
-```bash
-source ~/venvs/quant/bin/activate
-python scripts/quantize.py --model models/merged-qwen7b --scheme fp8     # minutes, no calibration
-python scripts/quantize.py --model models/merged-qwen7b --scheme w8a8    # SmoothQuant + GPTQ, ~15–40 min
-python scripts/quantize.py --model models/merged-qwen7b --scheme w4a16   # GPTQ INT4, ~15–40 min
-du -sh models/merged-qwen7b*
-```
-
-| Scheme | What's quantized | Calibration | Best on |
-|---|---|---|---|
-| `fp8` | weights + activations, 8-bit float | no | Ada / Hopper (compute capability ≥ 8.9) |
-| `w8a8` | weights + activations, INT8 | yes | Ampere and newer, high concurrency |
-| `w4a16` | weights only, INT4 (group size 128) | yes | small GPUs, low concurrency |
+| Scheme | Weights | Activations | Calibration | Kernel on this GPU (Ada, 8.9) | Best for |
+|---|---|---|---|---|---|
+| `fp8` | FP8 (E4M3), one scale per output channel | FP8, scale per token, computed live | none | FP8 tensor cores | quality + speed at any load |
+| `w8a8` | INT8, per channel (SmoothQuant + GPTQ) | INT8, per token, computed live | 256 examples | INT8 tensor cores | high concurrency |
+| `w4a16` | INT4, one scale per 128 weights (GPTQ) | bf16 | 256 examples | INT4→bf16 dequant in the kernel (Marlin) | low concurrency, small memory |
 
 **What's happening:**
-* **GPTQ** quantizes one layer at a time. It uses calibration activations to adjust the
-  remaining weights so they make up for the rounding error of the ones already quantized.
-* **SmoothQuant** moves activation outliers into the weights (a mathematically equivalent
-  rescale), so activations quantize well to INT8.
-* `lm_head` stays in 16-bit. It's sensitive to quantization and a small share of the model.
-* Calibration uses **your own training data**, so the scales match the traffic the model will
-  actually see.
+* **Weight-only vs weight+activation.** `w4a16` stores 4-bit weights but unpacks them to bf16 inside
+  the matmul kernel: fewer bytes read from memory, the same bf16 math. `fp8` and `w8a8` also
+  quantize the *inputs* of each matmul, so the multiply itself runs on 8-bit tensor cores (twice
+  bf16's FLOPs). Decoding one user is memory-bound, so bytes matter most there; at 32 users the
+  GPU becomes compute-bound and 8-bit math matters.
+* **Calibration** runs real examples through the model to see what activations look like. GPTQ needs
+  them to know which weight errors matter. We calibrate on our own training data, so the
+  statistics match real traffic. FP8 needs none: its weight scales come from the weights alone,
+  and activation scales are computed per token at run time ("dynamic").
+* **GPTQ** quantizes one layer at a time, one column at a time. After rounding a column, it
+  adjusts the not-yet-rounded columns to cancel the error *on the calibration inputs*
+  (using the inverse Hessian, `H = XᵀX`). The quantized weights move further from the original
+  than plain rounding would, but the layer's *outputs* stay closer.
+* **SmoothQuant**: activations have a few channels with huge values (outliers), which wreck an
+  INT8 scale. It divides those channels by a factor `s` and multiplies the matching weight rows
+  by `s`. The product is unchanged, but both sides are now easy to quantize.
+* **What stays 16-bit:** `lm_head` (sensitive, and the logits decide every token), the embedding
+  table (a lookup, not a matmul), and the norms. For Qwen2.5-7B that is 2 × 152,064 × 3,584 ×
+  2 bytes = **2.2 GB**, which is why INT4 can't reach ¼ of the size.
 
-Look inside `models/merged-qwen7b-w4a16/config.json` at `quantization_config`. vLLM reads it
-to pick the right kernels automatically.
+**Predicted sizes** (6.53 B quantized parameters + 2.2 GB in bf16):
+
+| | bf16 | fp8 | w8a8 | w4a16 |
+|---|---|---|---|---|
+| Weights | 15.2 GB | ~8.7 GB | ~8.7 GB | ~5.5 GB |
+| Share of bf16 | 100% | ~57% | ~57% | ~36% |
+
+### 10.1 Prepare
+
+The GPU must be free (vLLM stopped: `nvidia-smi` shows ~0 MiB). Quantization runs for up to an hour,
+so use tmux:
+
+```bash
+tmux new -s quant
+cd ~/LLM_FineTuning_Serving && source ~/venvs/quant/bin/activate
+nvidia-smi --query-gpu=memory.used --format=csv     # ~0 MiB
+df -h . && free -g                                  # ~25 GB disk for all three; ~20 GB RAM
+```
+
+llm-compressor's sequential pipeline keeps the model in CPU RAM (15 GB) and moves **one decoder
+layer at a time** to the GPU, with the calibration activations parked in RAM in between. So this
+works on far less VRAM than the model needs.
+
+### 10.2 FP8 (no calibration, a few minutes)
+
+```bash
+time python scripts/quantize.py --model models/merged-qwen7b --scheme fp8 2>&1 | tee ~/quant_fp8.log
+```
+
+### 10.3 W8A8 (SmoothQuant + GPTQ, ~20–40 min)
+
+```bash
+time python scripts/quantize.py --model models/merged-qwen7b --scheme w8a8 2>&1 | tee ~/quant_w8a8.log
+```
+
+The log goes through the 28 layers twice: once for SmoothQuant's statistics, once for GPTQ.
+For each Linear layer GPTQ prints how much error it couldn't cancel. Watch the trend: early layers
+are usually small, and the MLP `down_proj` layers (the ones with activation outliers) the largest.
+
+### 10.4 W4A16 (GPTQ, ~15–30 min)
+
+```bash
+time python scripts/quantize.py --model models/merged-qwen7b --scheme w4a16 2>&1 | tee ~/quant_w4a16.log
+```
+
+Run the three one after another, not in parallel: they share the GPU and RAM.
+
+### 10.5 Look inside
+
+```bash
+du -sh models/merged-qwen7b*
+python scripts/inspect_quant.py models/merged-qwen7b-fp8 models/merged-qwen7b-w8a8 models/merged-qwen7b-w4a16
+```
+
+`inspect_quant.py` prints the `quantization_config` that vLLM reads to pick its kernels, how one
+layer (`L10 gate_proj`, 18,944 × 3,584) is stored, and, for the 8-bit formats, the relative error of
+the dequantized weights against the original. What to expect:
+
+| | Stored as | Weight error |
+|---|---|---|
+| fp8 | `weight` float8_e4m3fn (18944, 3584) + `weight_scale` (18944, 1) | ~3% (3 mantissa bits) |
+| w8a8 | `weight` int8 (18944, 3584) + `weight_scale` (18944, 1) | ~1–2%, a bit more after GPTQ's adjustments |
+| w4a16 | `weight_packed` int32 (18944, 448): 8 values per int32, + `weight_scale` (18944, 28): one per 128 | not printed (packed) |
+
+Compare these with NF4's 9–10% from Step 6: QLoRA trained on a far coarser copy of the weights than
+anything served here.
+`lm_head` should be bf16 in all three.
 
 ## Step 11: Evaluate and benchmark quantized models
 
@@ -804,7 +873,8 @@ python scripts/report.py
 ```
 
 **How to read the table:**
-* **Size:** INT4 should be about ¼ of bf16, and FP8/INT8 about ½.
+* **Size:** about 57% of bf16 for FP8/INT8 and 36% for INT4, not ½ and ¼, because the 2.2 GB of
+  embeddings and `lm_head` stay 16-bit (Step 10).
 * **Perplexity:** 8-bit should be within about 1% of `merged`. INT4 typically loses a bit more.
   If it's much worse, try more calibration samples (`--num-calib 512`).
 * **Concurrency 1 (TPOT):** memory-bound, so INT4 should be fastest since it reads the fewest bytes per token.
@@ -881,7 +951,7 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
 ```
 scripts/       check_env, download_model, prepare_data, build_10k_dataset, train_lora, plot_training,
                test_adapter, eval_extraction, rescore_extraction, compare_extraction,
-               merge_lora, quantize, evaluate, benchmark, report, serve_vllm, chat_client
+               merge_lora, quantize, inspect_quant, evaluate, benchmark, report, serve_vllm, chat_client
 deploy/        vllm.service
 models/        base, merged and quantized models            (git-ignored)
 outputs/       LoRA checkpoints, adapters, TensorBoard logs (git-ignored)
