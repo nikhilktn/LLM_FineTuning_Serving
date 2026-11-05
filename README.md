@@ -485,7 +485,7 @@ python scripts/report.py
 | Exact match | 33.8% | **88.5%** |
 | Hallucination rate | 69.1% | **8.9%** |
 | Sign errors | 51 | **3** |
-| Perplexity | 1.1306 | **1.0088** |
+| Perplexity | 1.1168 | **1.0072** |
 
 **Read the errors, not just the score.** The first scoring gave the adapter 97.0% and 15.9%
 hallucination. Most "hallucinations" turned out to be the right number on a correctly named line,
@@ -499,6 +499,10 @@ python scripts/build_10k_dataset.py
 python scripts/rescore_extraction.py --old-eval-file data/eval_v1.jsonl \
     results/extract_base.json results/extract_lora-r16.json
 ```
+
+Perplexity needs the model, so it was re-run on the rebuilt data (`evaluate.py`, server stopped).
+Both models dropped (base 1.1306 → 1.1168, lora-r16 1.0088 → 1.0072): the fixed labels are the
+numbers the models were already predicting.
 
 The base model's hallucination rate barely moved (71.8% → 69.1%): it really does calculate
 missing lines. The adapter's halved. Evaluation labels are part of the experiment; check them
@@ -732,9 +736,9 @@ python scripts/report.py
 * **Quality:** not one answer changed under greedy decoding. The bf16 rounding (20–40% error in
   the stored update) shifts logits by too little to change which token wins. This is stronger
   than the "within noise" prediction.
-* **Perplexity:** 1.0071, but it isn't comparable with `lora-r16`'s 1.0088: that was measured
-  before the labels were fixed (20,277 scored tokens vs 20,390 now). To compare, re-run
-  `evaluate.py` for `base` and `lora-r16` on the current data.
+* **Perplexity:** 1.0071 vs the adapter's 1.0072, on the same 20,390 answer tokens. In loss terms,
+  that's 0.00708 vs 0.00717 nats per token, a difference of 1e-4: the merge lost nothing
+  measurable. (Base: 1.1168, i.e. 0.110 nats per token.)
 * **General ability:** code, arithmetic and a haiku came out as good as base; the code is
   token-for-token the same. Hindi translation is wrong in both (`संग्राम` means "battle"), a
   weakness of the base model, not forgetting. Fine-tuning on 2.6K extraction examples didn't
