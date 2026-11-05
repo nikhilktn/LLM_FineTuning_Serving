@@ -808,26 +808,28 @@ works on far less VRAM than the model needs.
 ### 10.2 FP8 (no calibration, a few minutes)
 
 ```bash
-time python scripts/quantize.py --model models/merged-qwen7b --scheme fp8 2>&1 | tee ~/quant_fp8.log
+( time python scripts/quantize.py --model models/merged-qwen7b --scheme fp8 ) 2>&1 | tee ~/quant_fp8.log
 ```
 
 ### 10.3 W8A8 (SmoothQuant + GPTQ, ~20–40 min)
 
 ```bash
-time python scripts/quantize.py --model models/merged-qwen7b --scheme w8a8 2>&1 | tee ~/quant_w8a8.log
+( time python scripts/quantize.py --model models/merged-qwen7b --scheme w8a8 ) 2>&1 | tee ~/quant_w8a8.log
 ```
 
 The log goes through the 28 layers twice: once for SmoothQuant's statistics, once for GPTQ.
-For each Linear layer GPTQ prints how much error it couldn't cancel. Watch the trend: early layers
-are usually small, and the MLP `down_proj` layers (the ones with activation outliers) the largest.
+For each Linear layer GPTQ prints `METRIC - error`: the output error it couldn't cancel, summed
+over output rows and calibration tokens. It's an absolute number, so it grows with layer width
+and activation size: compare one module across depth or across schemes, not modules with each other.
 
 ### 10.4 W4A16 (GPTQ, ~15–30 min)
 
 ```bash
-time python scripts/quantize.py --model models/merged-qwen7b --scheme w4a16 2>&1 | tee ~/quant_w4a16.log
+( time python scripts/quantize.py --model models/merged-qwen7b --scheme w4a16 ) 2>&1 | tee ~/quant_w4a16.log
 ```
 
-Run the three one after another, not in parallel: they share the GPU and RAM.
+Run the three one after another, not in parallel: they share the GPU and RAM. (The parentheses
+around `time` send its report into the log too.)
 
 ### 10.5 Look inside
 
@@ -849,6 +851,43 @@ the dequantized weights against the original. What to expect:
 Compare these with NF4's 9–10% from Step 6: QLoRA trained on a far coarser copy of the weights than
 anything served here.
 `lm_head` should be bf16 in all three.
+
+**SmoothQuant changes the weights on purpose.** For `w8a8` the script compares `W · diag(norm gain)`
+(what the layer computes), because SmoothQuant multiplies weight columns by `s` and divides the
+RMSNorm gain in front by `s`. Comparing raw weights shows a meaningless ~360% difference.
+
+### Our result
+
+| | fp8 | w8a8 | w4a16 |
+|---|---|---|---|
+| Time | ~15 s (1.6 s quantizing, the rest load/save) | 26 min (SmoothQuant 4, GPTQ 22) | 22 min (GPTQ) |
+| Weights | 8.71 GB (57%) | 8.71 GB (57%) | 5.55 GB (36%) |
+| `L10 gate_proj` error | 2.66% | 1.96% | (packed) |
+| SmoothQuant factors `s` (L10 MLP input) | | 0.03 to 20.2, median 4.55 | |
+
+No errors. The warnings are harmless: tokenizer parallelism, a deprecation notice in
+llm-compressor's tracer, an observer "falling back to CPU", and "saving a model with offloaded
+modules" (the model lives in CPU RAM by design).
+
+GPTQ took ~47 s per layer: 256 calibration examples go through each layer one at a time
+(`batch_size=1`), and each layer is run twice, once to collect `XᵀX` and once to pass the
+quantized layer's outputs on to the next.
+
+**The GPTQ errors** (sum over 28 layers, INT4 vs INT8):
+
+| | q | k | v | o | gate | up | down |
+|---|---|---|---|---|---|---|---|
+| w8a8 | 382 | 2,088 | 1,469 | 6,064 | 9,537 | 29,184 | 3,447 |
+| w4a16 | 40,143 | 52,367 | 21,452 | 138,824 | 883,625 | 916,612 | 294,610 |
+| ratio | 105× | 25× | 15× | 23× | 93× | 31× | 85× |
+
+* **They grow with depth**, by 10–100× from layer 0 to layer 27, because the residual stream's
+  activations get larger through the network and the metric is absolute.
+* **INT4 errors are 15–105× INT8's.** Rough theory: the INT8 step is a row's max ÷ 127, the INT4
+  step a 128-weight group's max ÷ 7, roughly 9× coarser, so ~80× the squared error. `down_proj`
+  (85×) isn't smoothed in `w8a8`, so it's the cleanest comparison. For q/k/v/gate/up the INT8 run
+  saw SmoothQuant-rescaled inputs, so the ratio mixes two effects.
+* These are per-layer errors on calibration data. Whether they matter for answers is Step 11's job.
 
 ## Step 11: Evaluate and benchmark quantized models
 
