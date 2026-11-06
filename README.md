@@ -1278,7 +1278,34 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
    system prompt.
 7. **KV-cache quantization:** pass `--kv-cache-dtype fp8` to the server and check how
    "Maximum concurrency" changes.
-8. **Beyond:** export to GGUF and run with llama.cpp on a CPU, try DPO with TRL after SFT, or
+8. **Generation config (repetition penalty):** vLLM applies the model's `generation_config.json`
+   as default sampling settings. For Qwen that includes `repetition_penalty: 1.05`, which applies
+   even with `temperature=0` (penalties come before the greedy pick) and penalises every token that
+   appears **in the prompt** as well as the output: positive logits are divided by 1.05, negative
+   ones multiplied. For a model that copies numbers out of the prompt, that's a train/serve
+   mismatch (training had no penalty). `--generation-config vllm` turns these defaults off.
+   Measure each setting twice, so the within-setting differences show the noise (Step 13):
+
+   ```bash
+   sudo systemctl stop vllm
+   tmux new -s genexp
+   cd ~/LLM_FineTuning_Serving && source ~/venvs/serve/bin/activate
+   KV="--kv-cache-memory-bytes 8053063680"        # the production setting, in both runs
+   SKIP_PPL=1 SKIP_BENCH=1 EXTRACT_RUNS=2 SERVE_ARGS="$KV" \
+     bash scripts/step11.sh models/merged-qwen7b-w8a8 gen-auto 2>&1 | tee ~/gen_auto.log
+   SKIP_PPL=1 SKIP_BENCH=1 EXTRACT_RUNS=2 SERVE_ARGS="$KV --generation-config vllm" \
+     bash scripts/step11.sh models/merged-qwen7b-w8a8 gen-vllm 2>&1 | tee ~/gen_vllm.log
+   C=scripts/compare_extraction.py; X=results/extract
+   python $C ${X}_gen-auto.json ${X}_gen-auto-r2.json        # noise, with the penalty
+   python $C ${X}_gen-vllm.json ${X}_gen-vllm-r2.json        # noise, without
+   python $C ${X}_gen-auto.json ${X}_gen-vllm.json           # effect, run 1
+   python $C ${X}_gen-auto-r2.json ${X}_gen-vllm-r2.json     # effect, run 2
+   sudo systemctl start vllm
+   ```
+
+   The penalty is real only if the across-setting differences are clearly larger than the
+   within-setting ones, and point the same way in both pairs.
+9. **Beyond:** export to GGUF and run with llama.cpp on a CPU, try DPO with TRL after SFT, or
    train with Unsloth and compare speed.
 
 ---
