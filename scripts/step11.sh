@@ -74,7 +74,7 @@ start_server ~/"vllm_$L.cold.log"; stop_server
 start_server ~/"vllm_$L.log"
 for f in ~/"vllm_$L.cold.log" ~/"vllm_$L.log"; do
   echo "  -- $(basename "$f")"
-  grep -E "Model loading took|torch.compile took|Available KV cache memory|GPU KV cache size|peak activation|Default sampling parameters" "$f" \
+  grep -E "Model loading took|torch.compile took|Available KV cache memory|GPU KV cache size|peak activation|sampling parameters have been overridden" "$f" \
     | sed -E 's/^.*\] //; s/(peak activation).*/\1/' || true
 done
 
