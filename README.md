@@ -1339,7 +1339,49 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
    #   ExecStart=/bin/bash scripts/serve_vllm.sh --kv-cache-memory-bytes 8053063680 --generation-config vllm --override-generation-config '{"temperature": 0}'
    sudo systemctl restart vllm && journalctl -u vllm -n 50 | grep -i "sampling parameters"
    ```
-9. **Beyond:** export to GGUF and run with llama.cpp on a CPU, try DPO with TRL after SFT, or
+9. **More training data (for the tax-sign weakness):** the first dataset used two 10-Ks per company
+   (FY2020 and FY2024). Only 103 of its 864 income statements are tax *benefits* (negative), against
+   742 tax expenses, and `income_tax` is the weakest field. Add the 2021–2023 10-Ks of the **train
+   companies only** (1,382 filings), so the eval set and the 49 eval companies stay untouched, and
+   train 1 epoch (the first run's eval loss was lowest after epoch 1; 1 epoch over ~2.5× the data is
+   a similar number of steps).
+
+   ```bash
+   # 1. build into data/v2 (train venv); data/ keeps the original files
+   cd ~/LLM_FineTuning_Serving && source ~/venvs/train/bin/activate
+   python scripts/build_10k_dataset.py --out-dir data/v2 2>&1 | tee ~/build_v2.log
+   python scripts/data_diff.py data data/v2          # eval identical: True; what the new data adds
+
+   # 2. train (GPU: stop the service; about 4–5 hours)
+   sudo systemctl stop vllm
+   tmux new -s train
+   python scripts/train_lora.py \
+       --model models/base --train-file data/v2/train.jsonl --eval-file data/eval.jsonl \
+       --output-dir outputs/qwen7b-lora-v2 --qlora \
+       --epochs 1 --lr 2e-4 --batch-size 2 --grad-accum 8 --max-length 2048 \
+       --lora-r 16 --lora-alpha 32 --save-steps 100 2>&1 | tee ~/train_v2.log
+   python scripts/plot_training.py --run-dir outputs/qwen7b-lora-v2 --label lora-v2
+
+   # 3. both adapters on one server, two extraction runs each, interleaved (serve venv)
+   source ~/venvs/serve/bin/activate
+   MODE=lora ADAPTER_NAME=v1 ADAPTER_PATH=outputs/qwen7b-lora/final \
+     EXTRA_LORAS="v2=outputs/qwen7b-lora-v2/final" bash scripts/serve_vllm.sh      # in tmux
+   for r in "" "-r2"; do                                                           # second shell
+     python scripts/eval_extraction.py --model v1 --label v1$r
+     python scripts/eval_extraction.py --model v2 --label v2$r
+   done
+   python scripts/compare_runs.py --a results/extract_v1.json results/extract_v1-r2.json \
+                                  --b results/extract_v2.json results/extract_v2-r2.json
+   # stop the server, then perplexity, then restore production
+   python scripts/evaluate.py --model models/base --adapter outputs/qwen7b-lora-v2/final --label lora-v2
+   sudo systemctl start vllm
+   ```
+
+   `compare_runs.py` separates effect from noise: within-setting agreement is the noise, and tables
+   that are stable within each adapter but differ between them are the real changes. Two settings
+   change at once here (data and epochs), so a win shows the new *recipe* is better, not which
+   change caused it.
+10. **Beyond:** export to GGUF and run with llama.cpp on a CPU, try DPO with TRL after SFT, or
    train with Unsloth and compare speed.
 
 ---
@@ -1364,7 +1406,7 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
 scripts/       check_env, download_model, prepare_data, build_10k_dataset, train_lora, plot_training,
                test_adapter, eval_extraction, rescore_extraction, compare_extraction,
                merge_lora, quantize, inspect_quant, evaluate, benchmark, report, serve_vllm, chat_client,
-               step11, publish_hub
+               step11, publish_hub, data_diff, compare_runs
 deploy/        vllm.service
 models/        base, merged and quantized models            (git-ignored)
 outputs/       LoRA checkpoints, adapters, TensorBoard logs (git-ignored)
