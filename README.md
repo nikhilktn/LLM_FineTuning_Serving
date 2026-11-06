@@ -1305,6 +1305,40 @@ Do these in any order. Use a different `--label` for each so `report.py` shows t
 
    The penalty is real only if the across-setting differences are clearly larger than the
    within-setting ones, and point the same way in both pairs.
+
+   **Our result: no net effect, but a hidden sign bias.**
+
+   | Pair | Identical answers | Fully right only in A / only in B |
+   |---|---|---|
+   | within: auto vs auto-r2 | 281 | 2 / 3 |
+   | within: vllm vs vllm-r2 | 282 | 1 / 0 |
+   | across (4 pairs) | 277–280 | 1–3 / 1–3, all p = 1.00 |
+
+   Fully right tables over two runs: 503 with the penalty, 503 without. But three tables follow
+   the setting exactly (the same in both runs of a setting, different across): SBAC and GDDY's tax
+   *benefits* (gold negative) come out right with the penalty and positive without it, and EQIX's
+   net income goes 815 → 814. In the other direction, HPQ and TT's tax *expenses* (gold positive)
+   came out negative only in penalty runs.
+
+   The mechanism is in the tokenizer. After `"income_tax":` the model chooses between `' -'`
+   (negative) and `' '` (positive). Tables print negatives in parentheses, so `' '` is in **249 of
+   287 prompts** and `' -'` in none. The penalty therefore shrinks only the "positive" option: on
+   every near-tie sign decision it pushes toward minus. That fixes the model's genuine misses on
+   tax benefits and breaks some tax expenses, so the totals cancel. The lesson: the model really is
+   unsure about tax signs. Fix that with training data (more tax-benefit examples), not with a
+   sampling setting that happens to favour one answer.
+
+   **For production**, the cleaner setting removes the train/serve mismatch and also makes greedy
+   decoding the default for clients that don't send a temperature (with `vllm` defaults alone, a
+   request without one gets temperature 1.0):
+
+   ```bash
+   sudo systemctl edit vllm
+   #   [Service]
+   #   ExecStart=
+   #   ExecStart=/bin/bash scripts/serve_vllm.sh --kv-cache-memory-bytes 8053063680 --generation-config vllm --override-generation-config '{"temperature": 0}'
+   sudo systemctl restart vllm && journalctl -u vllm -n 50 | grep -i "sampling parameters"
+   ```
 9. **Beyond:** export to GGUF and run with llama.cpp on a CPU, try DPO with TRL after SFT, or
    train with Unsloth and compare speed.
 
