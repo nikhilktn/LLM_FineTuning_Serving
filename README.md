@@ -1413,3 +1413,12 @@ outputs/       LoRA checkpoints, adapters, TensorBoard logs (git-ignored)
 data/          prepared train/eval JSONL                     (git-ignored)
 results/       train_*, eval_*, extract_*, bench_*, committed so progress is visible in the PR
 ```
+
+## License
+
+Copyright 2026 Nikhil Khetan. The code and documentation in this repository are released under the
+[Apache License 2.0](LICENSE).
+
+This repository contains no model weights or filing text. Third-party components keep their own
+licenses: Qwen2.5-7B-Instruct is Apache-2.0; SEC 10-K filings are public documents from EDGAR; vLLM,
+Transformers, PEFT, TRL and llm-compressor are Apache-2.0; bitsandbytes is MIT.
